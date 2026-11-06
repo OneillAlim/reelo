@@ -114,18 +114,32 @@ object Stats {
 }
 
 /** Satu reel = item pager berganti (kalau app kasih index), dan selalu minimal 600 ms dari reel sebelumnya biar satu swipe nggak kehitung dua kali. */
-class SwipeCounter(private val debounceMs: Long = 600) {
-    private val lastTs = mutableMapOf<App, Long>()
-    private val lastIdx = mutableMapOf<App, Int>()
+/**
+ * Ngitung reel baru, bukan jumlah gerakan. Event scroll dari pager/list reels dijumlah, lalu pas berhenti
+ * dibagi tinggi halaman jadi langkah (+1 maju, -1 mundur, 0 kalau geser lalu balik). Yang dihitung cuma posisi
+ * yang lebih jauh dari yang pernah dicapai, jadi swipe mundur lalu nonton ulang nggak nambah hitungan.
+ */
+class SwipeCounter {
+    private class S { var idx = 0; var best = 0; var px = 0; var page = 0 }
+    private val st = HashMap<App, S>()
 
-    fun onScroll(app: App, ts: Long, index: Int): Boolean {
-        if (index >= 0) {
-            val prev = lastIdx.put(app, index)
-            if (prev == index) return false
-        }
-        val t = lastTs[app]
-        if (t != null && ts - t < debounceMs) return false
-        lastTs[app] = ts
-        return true
+    fun scroll(app: App, dy: Int, page: Int) {
+        val s = st.getOrPut(app) { S() }
+        s.px += dy; if (page > 0) s.page = page
     }
+
+    fun settle(app: App): Int {
+        val s = st[app] ?: return 0
+        if (s.page <= 0) return 0
+        val f = s.px.toFloat() / s.page
+        val n = Math.round(f)
+        if (kotlin.math.abs(f - n) > 0.25f) return 0 // jari masih nahan di tengah geser
+        s.idx += n
+        s.px = 0
+        val fresh = (s.idx - s.best).coerceAtLeast(0)
+        s.best = maxOf(s.best, s.idx)
+        return fresh
+    }
+
+    fun reset(app: App) { st.remove(app) }
 }

@@ -31,9 +31,27 @@ adb shell appops set app.reelo GET_USAGE_STATS allow
 adb shell settings put secure enabled_accessibility_services app.reelo/app.reelo.ReelService
 ```
 
+## Cara ngitung
+Reelo ngitung **reel baru**, bukan jumlah gerakan jempol. Event scroll dari pager reels dijumlah, terus pas layar
+berhenti, totalnya dibagi tinggi halaman. Yang dihitung cuma posisi yang lebih jauh dari yang pernah dicapai,
+jadi geser setengah lalu balik, swipe mundur, dan nonton ulang nggak nambah hitungan.
+
 ## Kalau hitungan meleset
 Semua aturan "lagi di layar reels" ada di `app/src/main/java/app/reelo/Detectors.kt`.
-Kalau TikTok/YouTube/Instagram update dan hitungannya jadi 0 atau dobel, buka layar reels-nya lalu jalankan
-`adb shell uiautomator dump` dan cari `resource-id` dari view yang di-scroll, terus sesuaikan file itu.
+Build debug nulis tiap event scroll ke logcat. Buka layar reels, swipe, lalu lihat:
+```
+adb logcat -s ReeloScroll
+```
+Kalau `reel=false` di layar reels, sesuaikan id/kelasnya di `Detectors.kt`. Tiap swipe harusnya diakhiri `settle +1`
+(maju ke reel baru) atau `settle +0` (mundur, nonton ulang, atau geser nggak jadi).
 
-Yang sudah dicek di emulator: YouTube Shorts (`reel_*`). TikTok dan Instagram belum, karena butuh HP asli yang login.
+Dites di POCO X5 5G (HyperOS, Android 14), 7 Nov 2026:
+
+| App | View yang di-scroll | Jarak 1 reel |
+|---|---|---|
+| TikTok (`trill`) | `viewpager` (ViewPager) | 2221 px |
+| YouTube Shorts | `reel_recycler` (RecyclerView) | 2130 px |
+| Instagram Reels | `clips_viewer_view_pager` (ViewPager) | 2130 px |
+
+Di HyperOS/MIUI, nyalakan **Mulai otomatis** buat Reelo. Kalau nggak, sistem bisa matiin penghitungnya diam-diam.
+Beranda bakal nampilin peringatan kalau itu kejadian.

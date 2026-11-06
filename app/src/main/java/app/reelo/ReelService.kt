@@ -11,7 +11,9 @@ import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -29,6 +31,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     private var fgPkg: String? = null
     private val nudged = mutableSetOf<String>()
     private val nextPause = mutableMapOf<String, Int>()
+    private val debug by lazy { applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 }
 
     override fun onServiceConnected() {
         p = Prefs.get(this); db = Db.get(this)
@@ -38,6 +41,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         nm.createNotificationChannel(NotificationChannel(CH_FLOAT, "Maskot", NotificationManager.IMPORTANCE_LOW))
         float = FloatingMascot(this, p, ::line, ::hideToNotification)
         refreshFloat()
+        running = true
         Live.bump()
     }
 
@@ -45,6 +49,8 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         if (::p.isInitialized) p.sp.unregisterOnSharedPreferenceChangeListener(this)
         float?.remove(); pause?.dismiss()
         h.removeCallbacksAndMessages(null)
+        running = false
+        Live.bump()
         super.onDestroy()
     }
 
@@ -58,7 +64,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         when (e.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 val pkg = rootInActiveWindow?.packageName?.toString() ?: return
-                if (pkg != fgPkg) { fgPkg = pkg; refreshFloat() }
+                if (pkg != fgPkg) { App.of(fgPkg)?.let { counter.reset(it) }; fgPkg = pkg; refreshFloat() }
             }
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> onScroll(e)
         }
@@ -69,11 +75,20 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         val src = e.source ?: return
         val r = Rect().also { src.getBoundsInScreen(it) }
         val ratio = r.height().toFloat() / resources.displayMetrics.heightPixels
-        if (!Detectors.isReel(app, src.viewIdResourceName, e.className?.toString() ?: src.className?.toString(), ratio)) return
-        if (rootInActiveWindow?.packageName != e.packageName) return
+        val reel = Detectors.isReel(app, src.viewIdResourceName, e.className?.toString() ?: src.className?.toString(), ratio)
+        if (debug) Log.d("ReeloScroll", "$app id=${src.viewIdResourceName} cls=${e.className} r=${"%.2f".format(ratio)} idx=${e.fromIndex} dy=${e.scrollDeltaY} reel=$reel")
+        if (!reel || rootInActiveWindow?.packageName != e.packageName) return
+        counter.scroll(app, e.scrollDeltaY, r.height())
+        h.removeCallbacksAndMessages(app)
+        h.postAtTime({ settle(app) }, app, SystemClock.uptimeMillis() + SETTLE_MS)
+    }
+
+    private fun settle(app: App) {
+        val n = counter.settle(app)
+        if (debug) Log.d("ReeloScroll", "$app settle +$n")
+        if (n <= 0) return
         val now = System.currentTimeMillis()
-        if (!counter.onScroll(app, now, e.fromIndex)) return
-        db.add(app, now)
+        repeat(n) { db.add(app, now) }
         Live.bump()
         Widgets.update(this)
         refreshFloat()
@@ -102,7 +117,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
             if (gate("$d|night", nn, p.nightLimit)) { show("Jam Malam", "Udah $nn reels sejak ${"%02d".format(p.nightStart)}.00. Waktunya tidur."); return }
         }
         val warn = ceil(limit * .8).toInt()
-        if (n == warn && limit > 0 && nudged.add("$d|$app")) nudge(app, n, limit)
+        if (n in warn until limit && nudged.add("$d|$app")) nudge(app, n, limit)
         if (gate("$d|$app", n, limit)) show("Jatah ${app.label} habis", "$n reels hari ini. Total ${counts.values.sum()} dari ${p.totalLimit}.")
     }
 
@@ -151,7 +166,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         val f = float ?: return
         val now = System.currentTimeMillis()
         val visible = p.floatOn && now >= p.snoozeUntil && fgPkg != packageName && pause == null
-        if (p.snoozeUntil > now) { h.removeCallbacksAndMessages(SNOOZE); h.postAtTime({ refreshFloat() }, SNOOZE, android.os.SystemClock.uptimeMillis() + (p.snoozeUntil - now)) }
+        if (p.snoozeUntil > now) { h.removeCallbacksAndMessages(SNOOZE); h.postAtTime({ refreshFloat() }, SNOOZE, SystemClock.uptimeMillis() + (p.snoozeUntil - now)) }
         if (!visible) { f.hide(); return }
         val (_, counts) = today()
         val total = counts.values.sum()
@@ -180,8 +195,14 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         const val CH_FLOAT = "float"
         const val NOTIF_FLOAT = 1
         private val SNOOZE = Any()
+        private const val SETTLE_MS = 350L
 
-        fun isOn(ctx: Context): Boolean {
+        /** true cuma kalau service beneran nyambung. HyperOS/MIUI kadang matiin prosesnya tapi pengaturan tetap nyala. */
+        @Volatile var running = false
+
+        fun isOn(ctx: Context) = running && enabled(ctx)
+
+        fun enabled(ctx: Context): Boolean {
             val s = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
             return s.split(':').any { it.startsWith("${ctx.packageName}/") }
         }

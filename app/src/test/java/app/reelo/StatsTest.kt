@@ -17,15 +17,24 @@ class StatsTest {
         assertEquals(LocalDate.parse("2026-11-06"), Days.of(at("2026-11-06", 4, 0)))
     }
 
-    @Test fun counterUsesIndexThenDebounce() {
-        val c = SwipeCounter(600)
-        assertTrue(c.onScroll(App.TIKTOK, 0, 1))
-        assertFalse(c.onScroll(App.TIKTOK, 100, 1))
-        assertFalse(c.onScroll(App.TIKTOK, 200, 2))
-        assertTrue(c.onScroll(App.TIKTOK, 900, 3))
-        assertTrue(c.onScroll(App.SHORTS, 0, -1))
-        assertFalse(c.onScroll(App.SHORTS, 300, -1))
-        assertTrue(c.onScroll(App.SHORTS, 900, -1))
+    @Test fun counterOnlyCountsNewReels() {
+        val c = SwipeCounter()
+        fun swipe(vararg dy: Int): Int { dy.forEach { c.scroll(App.TIKTOK, it, 2356) }; return c.settle(App.TIKTOK) }
+        // jarak halaman TikTok 2221 px, tinggi view 2356: beda 6% nggak boleh numpuk jadi meleset
+        assertEquals(1, swipe(878, 1343))
+        assertEquals(0, swipe(105, -105))
+        assertEquals(0, swipe(-2221))
+        assertEquals(0, swipe(2221))
+        repeat(20) { assertEquals(1, swipe(951, 1265, 5)) }
+        assertEquals(0, swipe(1200))
+        assertEquals(0, swipe(-1200))
+        assertEquals(0, swipe(1200))
+        assertEquals(1, swipe(1021))
+        assertEquals(0, c.settle(App.SHORTS))
+        c.reset(App.TIKTOK)
+        assertEquals(0, swipe(-2221))
+        assertEquals(0, swipe(2221))
+        assertEquals(1, swipe(2221))
     }
 
     @Test fun detectorsNeedReelScreens() {
@@ -33,6 +42,8 @@ class StatsTest {
         assertFalse(Detectors.isReel(App.SHORTS, "com.google.android.youtube:id/results", "RecyclerView", 0.95f))
         assertTrue(Detectors.isReel(App.IG, "com.instagram.android:id/clips_viewer_view_pager", "ViewPager", 1f))
         assertFalse(Detectors.isReel(App.TIKTOK, null, "androidx.viewpager.widget.ViewPager", 0.4f))
+        assertFalse(Detectors.isReel(App.SHORTS, "com.google.android.youtube:id/reel_player_underlay", "android.widget.FrameLayout", 0.94f))
+        assertTrue(Detectors.isReel(App.TIKTOK, "com.ss.android.ugc.trill:id/viewpager", "androidx.viewpager.widget.ViewPager", 0.98f))
     }
 
     @Test fun sessionsSplitOnTwoMinuteGap() {

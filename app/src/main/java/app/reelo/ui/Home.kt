@@ -1,6 +1,7 @@
 package app.reelo.ui
 
 import androidx.compose.animation.core.Animatable
+import app.reelo.ReelService
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -107,6 +108,10 @@ fun Home(onApp: (App) -> Unit, onRecap: () -> Unit) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Lbl(today.format(DATE_LONG)); Px(greeting(), 21.sp) }
             Pill("$streak hari waras", pal.teal)
+        }
+        if (!ReelService.isOn(ctx)) Card(onClick = { open(ctx, android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS) }) {
+            Txt("Penghitung lagi mati", 14.sp, pal.red, bold = true)
+            Small(if (ReelService.enabled(ctx)) STUCK else "Reels yang kamu tonton sekarang nggak kehitung. Ketuk buat nyalain.")
         }
         val empty = loaded != null && di == 0 && n == 0
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

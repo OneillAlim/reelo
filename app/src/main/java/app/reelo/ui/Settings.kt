@@ -48,6 +48,8 @@ import app.reelo.Swap
 import app.reelo.ThemeMode
 import app.reelo.Usage
 
+const val STUCK = "Dimatiin sistem. Matikan lalu nyalakan lagi, terus izinkan Mulai otomatis biar nggak kejadian lagi."
+
 fun open(ctx: Context, action: String) = runCatching { ctx.startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 
 fun batteryGuide(): String = when (Build.MANUFACTURER.lowercase()) {
@@ -93,7 +95,7 @@ fun SettingsScreen(onBack: () -> Unit, onTema: () -> Unit) {
         Card {
             Lbl("Cek kesehatan")
             Health(svc, if (svc) "Penghitung reels aktif" else "Penghitung reels mati",
-                if (svc) last?.let { "Terakhir menghitung ${(System.currentTimeMillis() - it) / 60_000} menit lalu" } ?: "Belum ada reel yang terhitung" else "Tanpa ini Reelo nggak bisa ngitung swipe.",
+                if (svc) last?.let { "Terakhir menghitung ${(System.currentTimeMillis() - it) / 60_000} menit lalu" } ?: "Belum ada reel yang terhitung" else STUCK.takeIf { ReelService.enabled(ctx) } ?: "Tanpa ini Reelo nggak bisa ngitung swipe.",
                 if (svc) null else "Nyalakan") { open(ctx, Settings.ACTION_ACCESSIBILITY_SETTINGS) }
             Health(Usage.hasAccess(ctx), "Data pemakaian", if (Usage.hasAccess(ctx)) "Screen time terbaca" else "Screen time kosong tanpa izin ini.",
                 if (Usage.hasAccess(ctx)) null else "Izinkan") { open(ctx, Settings.ACTION_USAGE_ACCESS_SETTINGS) }
@@ -194,7 +196,7 @@ fun Onboarding() {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 repeat(3) { i -> Box(Modifier.size(14.dp, 10.dp).then(if (i < done) Modifier.background(pal.red) else Modifier).border(2.dp, if (i < done) pal.red else pal.fg)) }
             }
-            Small("Izin $done dari 3")
+            Small(if (done == 3) "Semua izin beres" else "Izin ${done + 1} dari 3")
         }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) { MascotView(Mood.SEGAR, 4.dp); Px(p.mascot.label, 18.sp) }
         Msg("Halo! Aku bantu kamu tahu berapa reels yang kamu tonton tiap hari.")
