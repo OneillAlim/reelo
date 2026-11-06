@@ -32,7 +32,22 @@ object Repo {
 
     fun streak(ctx: Context): Pair<Int, Int> {
         val p = Prefs.get(ctx); val today = Days.today(); val first = firstDay(ctx)
-        return Stats.streak(Db.get(ctx).dailyTotals(first, today), today, first, p.totalLimit)
+        return Stats.streak(totals(ctx, first, today), today, first, p.totalLimit)
+    }
+
+    /** Total per hari. Hari "buta" (penghitung mati) dianggap lewat jatah, biar nggak jadi streak gratis. */
+    private fun totals(ctx: Context, first: LocalDate, today: LocalDate): Map<LocalDate, Int> {
+        val p = Prefs.get(ctx)
+        return Db.get(ctx).dailyTotals(first, today) + p.blind.associateWith { p.totalLimit + 1 }
+    }
+
+    /**
+     * Hari dengan 0 reels padahal TikTok/IG lama kebuka = penghitungnya mati (HyperOS suka begitu), bukan libur.
+     * ponytail: tebakan dari screen time; kalau perlu pasti, catat jam hidup service per hari.
+     */
+    private fun blind(ctx: Context, d: LocalDate): Boolean {
+        val u = Usage.read(ctx, Days.start(d), Days.end(d))
+        return (u[App.TIKTOK]?.ms ?: 0) >= 5 * 60_000 || (u[App.IG]?.ms ?: 0) >= 15 * 60_000
     }
 
     /** Dipanggil tiap app dibuka: kasih Rol Film buat hari yang lolos, update streak terbaik, cek lencana. */
@@ -43,6 +58,7 @@ object Repo {
         var d = if (p.rewardedUntil.isEmpty()) first else LocalDate.parse(p.rewardedUntil).plusDays(1)
         while (d.isBefore(today)) {
             val n = totals[d] ?: 0
+            if (n == 0 && blind(ctx, d)) { p.markBlind(d); p.rewardedUntil = d.toString(); d = d.plusDays(1); continue }
             if (n <= p.totalLimit) p.rol += 20
             if (d.isAfter(first)) {
                 if (n == 0) p.grant(Badge.JEMPOL_LIBUR)
@@ -59,7 +75,7 @@ object Repo {
             d = d.plusDays(1)
         }
         if (p.focusUntil in 1..System.currentTimeMillis()) { p.grant(Badge.FOKUS); p.focusUntil = 0 }
-        val (s, _) = Stats.streak(totals, today, first, p.totalLimit)
+        val (s, _) = Stats.streak(totals(ctx, first, today), today, first, p.totalLimit)
         if (s > p.bestStreak) p.bestStreak = s
         if (p.bestStreak >= 7) p.grant(Badge.SEMINGGU)
         if (p.bestStreak >= 14) p.grant(Badge.DUA_MINGGU)

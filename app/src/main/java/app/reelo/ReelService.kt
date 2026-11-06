@@ -130,16 +130,22 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
 
     private fun show(title: String, sub: String, focus: Boolean = false) {
         if (pause != null) return
-        if (p.strict) performGlobalAction(GLOBAL_ACTION_HOME)
+        if (p.strict) leave()
         float?.hide()
         pause = PauseCard(this, p, night(), title, sub, allowContinue = !p.strict, onStop = {
-            performGlobalAction(GLOBAL_ACTION_HOME)
+            leave()
             if (!p.strict && p.grant(Badge.TAHAN_GODAAN)) Live.bump()
         }, onContinue = {
             p.addSatuLagi(Days.today())
             if (focus) p.focusUntil = 0
             Live.bump()
         }, onClose = { pause = null; refreshFloat() })
+    }
+
+    /** BACK dulu biar player-nya ketutup. Kalau langsung HOME, YouTube masuk PiP dan Shorts-nya tetap muter. */
+    private fun leave() {
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        h.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 300)
     }
 
     private fun nudge(app: App, n: Int, limit: Int) {

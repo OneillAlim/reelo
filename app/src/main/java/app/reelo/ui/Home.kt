@@ -97,6 +97,7 @@ fun Home(onApp: (App) -> Unit, onRecap: () -> Unit) {
         line >= 0 -> POKES[line % POKES.size]
         loaded == null -> "Bentar, aku hitung dulu..."
         di == 0 && n == 0 -> "Belum ada reels hari ini. Rol masih kosong."
+        di == 0 && p.inNight(java.time.LocalTime.now().hour) -> "Udah lewat jam ${"%02d".format(p.nightStart)}.00. Reels-nya lanjut besok ya."
         di == 0 && n < limit / 3 -> "Baru $n reels. Mantap!"
         di == 0 && n < limit -> "Udah $n reels. Jempolnya pegel nggak?"
         di == 0 -> "Ini reels ke-$n. Napas dulu yuk."

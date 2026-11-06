@@ -104,17 +104,18 @@ fun Saya(onSettings: () -> Unit, onRecap: () -> Unit) {
     }
 }
 
-data class RecapData(val from: LocalDate, val to: LocalDate, val total: Int, val prev: Int, val peakHour: Int?, val fav: App?, val favPct: Int, val badges: Int)
+data class RecapData(val from: LocalDate, val to: LocalDate, val days: Int, val total: Int, val prev: Int, val peakHour: Int?, val fav: App?, val favPct: Int, val badges: Int)
 
 fun recapData(ctx: Context): RecapData {
     val to = Days.today().minusDays(1)
-    val from = to.minusDays(6)
+    val from = maxOf(to.minusDays(6), Repo.firstDay(ctx))
+    val days = (to.toEpochDay() - from.toEpochDay() + 1).toInt()
     val db = Db.get(ctx)
     val sw = db.range(Days.start(from), Days.end(to))
     val prev = db.count(Days.start(from.minusDays(7)), Days.start(from))
     val peak = sw.groupingBy { Days.hourOf(it.ts) }.eachCount().maxByOrNull { it.value }?.key
     val fav = sw.groupingBy { it.app }.eachCount().maxByOrNull { it.value }
-    return RecapData(from, to, sw.size, prev, peak, fav?.key, if (sw.isEmpty()) 0 else fav!!.value * 100 / sw.size, Prefs.get(ctx).badges.size)
+    return RecapData(from, to, days, sw.size, prev, peak, fav?.key, if (sw.isEmpty()) 0 else fav!!.value * 100 / sw.size, Prefs.get(ctx).badges.size)
 }
 
 private val RANGE = DateTimeFormatter.ofPattern("d MMM", ID)
@@ -132,10 +133,15 @@ fun Recap(onBack: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Px("<", 22.sp, STORY_FG, Modifier.clickable(onClickLabel = "Kembali", onClick = onBack).padding(end = 10.dp))
             Px("Reelo Recap", 15.sp, STORY_FG, Modifier.weight(1f))
-            Txt("${r.from.format(RANGE)} – ${r.to.format(RANGE)}", 11.sp, STORY_FG.copy(alpha = .7f))
+            if (r.days > 0) Txt("${r.from.format(RANGE)} – ${r.to.format(RANGE)}", 11.sp, STORY_FG.copy(alpha = .7f))
         }
-        MascotView(Stats.mood(r.total / 7, p.totalLimit), 5.dp)
-        Txt("7 hari terakhir kamu nonton", 13.sp, STORY_FG.copy(alpha = .8f))
+        if (r.days <= 0) {
+            MascotView(Mood.SEGAR, 5.dp)
+            Txt("Recap pertamamu muncul setelah rol hari ini selesai jam 04.00.", 15.sp, STORY_FG)
+            return@Column
+        }
+        MascotView(Stats.mood(r.total / r.days, p.totalLimit), 5.dp)
+        Txt("${r.days} hari terakhir kamu nonton", 13.sp, STORY_FG.copy(alpha = .8f))
         Px("${r.total}", 64.sp, Color(0xFFF2B544))
         val diff = if (r.prev > 0) (r.total - r.prev) * 100 / r.prev else null
         Txt(
@@ -171,8 +177,8 @@ fun shareRecap(ctx: Context, r: RecapData, m: Mascot) {
     while (x < w - 30) { c.drawRect(x, 24f, x + 40, 54f, hole); c.drawRect(x, h - 54f, x + 40, h - 24f, hole); x += 80 }
     text("Reelo Recap", 90f, 170f, 56f, face = px)
     text("${r.from.format(RANGE)} – ${r.to.format(RANGE)}", w - 90f, 170f, 36f, 0xB3F6E7C8.toInt(), right = true)
-    c.drawBitmap(Sprite.bitmap(m, Stats.mood(r.total / 7, Prefs.get(ctx).totalLimit), 12), 70f, 210f, null)
-    text("7 hari terakhir kamu nonton", 90f, 600f, 42f, 0xCCF6E7C8.toInt())
+    c.drawBitmap(Sprite.bitmap(m, Stats.mood(r.total / r.days.coerceAtLeast(1), Prefs.get(ctx).totalLimit), 12), 70f, 210f, null)
+    text("${r.days} hari terakhir kamu nonton", 90f, 600f, 42f, 0xCCF6E7C8.toInt())
     text("${r.total}", 80f, 800f, 220f, 0xFFF2B544.toInt(), px)
     text("reels", 90f, 870f, 44f)
     listOf(

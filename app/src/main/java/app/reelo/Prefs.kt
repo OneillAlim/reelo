@@ -55,6 +55,7 @@ class Prefs private constructor(val sp: SharedPreferences) {
     var rol by int(0)
     var rewardedUntil by str("")
     var bestStreak by int(0)
+    var blindStr by str("")
     var limitTiktok by int(30)
     var limitShorts by int(20)
     var limitIg by int(10)
@@ -99,6 +100,9 @@ class Prefs private constructor(val sp: SharedPreferences) {
     fun limit(app: App) = when (app) { App.TIKTOK -> limitTiktok; App.SHORTS -> limitShorts; App.IG -> limitIg }
     fun setLimit(app: App, v: Int) = when (app) { App.TIKTOK -> limitTiktok = v; App.SHORTS -> limitShorts = v; App.IG -> limitIg = v }
     val totalLimit get() = App.entries.sumOf { limit(it) }
+
+    val blind: Set<LocalDate> get() = blindStr.split(',').filter { it.isNotEmpty() }.map(LocalDate::parse).toSet()
+    fun markBlind(d: LocalDate) { blindStr = (blind + d).joinToString(",") }
 
     fun satuLagi(d: LocalDate) = sp.getInt("sl_$d", 0)
     fun addSatuLagi(d: LocalDate) = sp.edit().putInt("sl_$d", satuLagi(d) + 1).apply()
