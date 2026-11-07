@@ -201,20 +201,26 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         h.postDelayed(midnight, Flame.untilMidnight(System.currentTimeMillis()) + 2_000)
     }
 
-    /** Teman yang mau dikirimin hari ini + pesannya. Kosong kalau semua udah kebagian. */
-    private fun flameItems(only: String? = null): List<Pair<Friend, Msg>> {
-        val today = Flame.day(System.currentTimeMillis())
-        val done = db.sentOk(today)
-        val msgs = db.msgs()
-        val rnd = java.util.Random()
-        return db.friends().filter { it.on && it.streak > 0 && it.name !in done && (only == null || it.name == only) }
-            .take(Flame.MAX_FRIENDS)
-            .mapNotNull { f -> Flame.pick(msgs, db.lastMsg(f.name), rnd)?.let { f to it } }
+    /**
+     * Siapa yang mau dikirimin: mode "semua yang ngestreak" = tiap baris Inbox yang ada apinya (termasuk api baru),
+     * selain itu cuma yang dicentang. Yang udah kebagian hari ini selalu dilewati. [only] = Tes 1 teman.
+     */
+    private fun flameWant(only: String?): Pair<(String) -> Boolean, Int> {
+        val done = db.sentOk(Flame.day(System.currentTimeMillis()))
+        val friends = db.friends().filter { it.streak > 0 }
+        val picked = friends.filter { it.on }.map { it.name }.toSet()
+        val all = p.flameAll && only == null
+        val want = { name: String -> name !in done && (if (only != null) name == only else all || name in picked) }
+        val est = friends.count { want(it.name) }.coerceAtMost(Flame.MAX_FRIENDS)
+        return want to est
     }
+
+    private fun hasMsg() = db.msgs().any { it.on }
 
     /**
      * Cek apakah Jaga Api harus jalan sekarang: nyala, belum jalan hari ini, nggak ditunda, HP kebuka, nggak lagi telepon.
-     * Kalau iya: hitung mundur 5 detik. Dipanggil jam 00.00 dan tiap HP dibuka. [force] = tombol tes di build debug.
+     * Dipanggil jam 00.00 dan tiap HP dibuka. Langsung jalan, atau hitung mundur dulu kalau setelannya nyala.
+     * [force] = tombol tes di build debug.
      */
     fun flameMaybe(force: Boolean = false) {
         val now = System.currentTimeMillis()
@@ -222,36 +228,47 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         if (bot.running || flameCard != null || pause != null) return
         if (getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked) return
         if (getSystemService(android.media.AudioManager::class.java).mode != android.media.AudioManager.MODE_NORMAL) return
-        val items = flameItems()
-        if (items.isEmpty()) return // belum ada teman/pesan, atau semua udah kebagian; dicek lagi pas HP dibuka berikutnya
+        if (!hasMsg()) return
+        val (_, est) = flameWant(null)
+        if (est == 0 && !p.flameAll) return // belum ada yang dicentang; dicek lagi pas HP dibuka berikutnya
         float?.hide()
         flameCard = FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() }).also { card ->
-            card.countdown(items.size, onSnooze = { p.flameSnoozeUntil = System.currentTimeMillis() + 60 * 60_000; card.dismiss() }, onStart = { flameRun(items, test = false) })
+            if (p.flameCountdown || force) card.countdown(est, onSnooze = { p.flameSnoozeUntil = System.currentTimeMillis() + 60 * 60_000; card.dismiss() }, onStart = { flameRun(null) })
+            else flameRun(null)
         }
     }
 
-    /** Dari layar Jaga Api: kirim sekarang (semua) atau tes ke satu teman. */
+    /** Dari layar Jaga Api: kirim sekarang (semua) atau tes ke satu teman. -1 = lagi jalan, 0 = nggak ada pesan aktif. */
     fun flameNow(only: String? = null): Int {
         if (bot.running) return -1
-        val items = flameItems(only)
-        if (items.isNotEmpty()) flameRun(items, test = only != null)
-        return items.size
+        if (!hasMsg()) return 0
+        flameRun(only)
+        return 1
     }
 
-    private fun flameRun(items: List<Pair<Friend, Msg>>, test: Boolean) {
+    private fun flameRun(only: String?) {
         val today = Flame.day(System.currentTimeMillis())
+        val (want, est) = flameWant(only)
+        val msgs = db.msgs(); val rnd = java.util.Random()
         float?.hide()
         val card = flameCard ?: FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() }).also { flameCard = it }
-        var ok = 0
-        val back = fgPkg
-        bot.send(items, back,
-            progress = { i, n, name -> card.progress(i, n, name) { bot.stop() } },
-            each = { f, m, note -> db.logSent(today, f.name, m.id, note == null, note); if (note == null) ok++ },
+        var ok = 0; var n = 0
+        bot.sweep(
+            want = { name -> n < Flame.MAX_FRIENDS && want(name) },
+            pick = { name, _ -> Flame.pick(msgs, db.lastMsg(name), rnd)?.let { m -> m.id to m.text } },
+            total = est, back = fgPkg,
+            progress = { i, t, name -> card.progress(i, t, name) { bot.stop() } },
+            each = { name, streak, id, note ->
+                n++
+                db.logSent(today, name, id, note == null, note)
+                db.touchFriend(name, if (note == null) streak + 1 else streak)
+                if (note == null) ok++
+            },
             done = { cancelled ->
-                if (!test && !cancelled) p.flameLastRun = today.toString()
+                if (only == null && !cancelled) p.flameLastRun = today.toString()
                 card.dismiss()
                 Live.bump()
-                notifyFlame(ok, items.size, cancelled)
+                notifyFlame(ok, n, cancelled)
             })
     }
 
@@ -266,7 +283,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
 
     private fun notifyFlame(ok: Int, n: Int, cancelled: Boolean) {
         if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
-        val title = if (ok == n) "Api $ok teman aman 🔥" else "Api $ok dari $n teman aman"
+        val title = when { n == 0 -> "Semua api udah aman hari ini"; ok == n -> "Api $ok teman aman 🔥"; else -> "Api $ok dari $n teman aman" }
         val text = when { cancelled -> "Dibatalin di tengah jalan."; ok < n -> "${n - ok} gagal. Ketuk buat lihat alasannya."; else -> "Tinggal tunggu mereka bales." }
         val nn = NotificationCompat.Builder(this, CH_NUDGE).setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(title).setContentText(text).setContentIntent(openApp(this, false)).setAutoCancel(true).build()

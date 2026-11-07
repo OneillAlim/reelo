@@ -59,7 +59,7 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
     val msgs = load(v, initial = emptyList<Msg>()) { db.msgs() }
     val log = load(v, initial = emptyList<Db.Sent>()) { db.history(60) }
     val live = friends.filter { it.streak > 0 }
-    val picked = live.filter { it.on }.take(Flame.MAX_FRIENDS)
+    val picked = (if (p.flameAll) live else live.filter { it.on }).take(Flame.MAX_FRIENDS)
     val activeMsgs = msgs.count { it.on }
     val today = Flame.day(System.currentTimeMillis()).toString()
     val doneToday = p.flameLastRun == today
@@ -71,7 +71,7 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
     fun run(only: String?) {
         val s = svc() ?: run { info = "Penghitung Reelo lagi mati, nyalain dulu di Aksesibilitas."; return }
         val n = s.flameNow(only)
-        info = when { n < 0 -> "Lagi jalan, tunggu bentar."; n == 0 -> "Nggak ada yang perlu dikirim: semua udah kebagian hari ini, atau belum ada pesan aktif."; else -> null }
+        info = when { n < 0 -> "Lagi jalan, tunggu bentar."; n == 0 -> "Belum ada pesan aktif. Tulis dulu di Pesan."; else -> null }
     }
 
     Screen {
@@ -108,7 +108,11 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Card(Modifier.weight(1f), onClick = onFriends) { Lbl("Teman"); Row(verticalAlignment = Alignment.CenterVertically) { Big("${picked.size}"); Px(" /${live.size}", 14.sp, pal.muted, Modifier.padding(top = 4.dp)) }; Small("dicentang >") }
+            Card(Modifier.weight(1f), onClick = onFriends) {
+                Lbl("Teman")
+                Row(verticalAlignment = Alignment.CenterVertically) { Big("${picked.size}"); if (!p.flameAll) Px(" /${live.size}", 14.sp, pal.muted, Modifier.padding(top = 4.dp)) }
+                Small(if (p.flameAll) "semua yang ngestreak >" else "dicentang >")
+            }
             Card(Modifier.weight(1f), onClick = onMsgs) { Lbl("Pesan"); Big("$activeMsgs"); Small("variasi aktif >") }
         }
         val lastDay = log.firstOrNull()?.day
@@ -129,8 +133,8 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
         }
         if (picking) Card {
             Lbl("Kirim 1 pesan beneran ke...")
-            if (picked.isEmpty()) Small("Belum ada teman yang dicentang.")
-            picked.take(12).forEach { f ->
+            if (live.isEmpty()) Small("Pindai Inbox dulu di Teman.")
+            live.take(12).forEach { f ->
                 Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { confirm = f.name; picking = false }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Txt(f.name, modifier = Modifier.weight(1f)); FlameIcon(14.dp); Px(" ${f.streak}", 14.sp)
                 }
@@ -147,6 +151,14 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
             }
         }
         info?.let { Small(it, color = pal.red) }
+        Card {
+            SettingRow("Semua yang ngestreak", "Tiap teman yang lagi punya api ikut, termasuk api baru. Matikan buat milih sendiri.") {
+                Toggle(p.flameAll, "Semua yang ngestreak") { p.flameAll = it; Live.bump() }
+            }
+            SettingRow("Hitung mundur dulu", "Kartu 5 detik dengan tombol Tunda sebelum mulai. Kalau mati, langsung jalan (tetap ada Batal).") {
+                Toggle(p.flameCountdown, "Hitung mundur dulu") { p.flameCountdown = it; Live.bump() }
+            }
+        }
         Small("Streak butuh dua arah: Reelo ngisi sisimu, temanmu tetap harus bales.")
         if (ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
             Pill("debug: hitung mundur sekarang", pal.muted, Modifier.clickable { svc()?.flameMaybe(force = true) })
@@ -189,10 +201,15 @@ fun ApiFriends(onBack: () -> Unit) {
         if (friends.size > 8) BasicTextField(q, { q = it }, Modifier.fillMaxWidth().border(2.dp, pal.line).padding(10.dp),
             textStyle = TextStyle(color = pal.fg, fontSize = 14.sp, fontFamily = BodyFont), singleLine = true, cursorBrush = SolidColor(pal.fg),
             decorationBox = { inner -> if (q.isEmpty()) Txt("Cari nama...", 14.sp, pal.muted); inner() })
+        Card {
+            SettingRow("Semua yang ngestreak", if (p.flameAll) "Nyala: semua di bawah ikut, centang diabaikan." else "Mati: cuma yang kamu centang.") {
+                Toggle(p.flameAll, "Semua yang ngestreak") { p.flameAll = it; Live.bump() }
+            }
+        }
         if (live.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { Lbl("Api nyala · $onCount dicentang") }
-                Pill(if (live.all { it.on }) "Kosongkan" else "Pilih semua", pal.musInk, Modifier.clickable(role = Role.Button) {
+                Box(Modifier.weight(1f)) { Lbl(if (p.flameAll) "Api nyala · ${live.size} ikut" else "Api nyala · $onCount dicentang") }
+                if (!p.flameAll) Pill(if (live.all { it.on }) "Kosongkan" else "Pilih semua", pal.musInk, Modifier.clickable(role = Role.Button) {
                     val all = !live.all { it.on }; live.forEach { db.setFriendOn(it.name, all) }; Live.bump()
                 })
             }
@@ -201,11 +218,11 @@ fun ApiFriends(onBack: () -> Unit) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Txt(f.name, 14.sp, bold = f.on, modifier = Modifier.weight(1f))
                         FlameIcon(14.dp); Px("${f.streak}", 15.sp)
-                        Toggle(f.on, "Jaga api ${f.name}") { db.setFriendOn(f.name, it); Live.bump() }
+                        if (!p.flameAll) Toggle(f.on, "Jaga api ${f.name}") { db.setFriendOn(f.name, it); Live.bump() }
                     }
                 }
             }
-            if (onCount > Flame.MAX_FRIENDS) Small("Cuma ${Flame.MAX_FRIENDS} teman teratas yang dikirimin tiap malam.", color = pal.red)
+            if ((if (p.flameAll) live.size else onCount) > Flame.MAX_FRIENDS) Small("Cuma ${Flame.MAX_FRIENDS} teman teratas yang dikirimin tiap malam.", color = pal.red)
         }
         if (dead.isNotEmpty()) {
             Lbl("Api padam · pulihkan di TikTok")
@@ -255,7 +272,7 @@ fun ApiMsgs(onBack: () -> Unit) {
                 textStyle = TextStyle(color = pal.fg, fontSize = 15.sp, fontFamily = BodyFont), cursorBrush = SolidColor(pal.fg),
                 decorationBox = { inner -> if (text.isEmpty()) Txt("mis. api aman ya {nama} 🔥", 15.sp, pal.muted); inner() })
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                listOf("{nama}", "{hari}", "🔥", "🫶").forEach { chip -> Pill(chip, pal.teal, Modifier.clickable(role = Role.Button) { text = (text + chip).take(Flame.MAX_LEN) }) }
+                listOf("👉", "🔥", "🫶", "{nama}", "{hari}").forEach { chip -> Pill(chip, pal.teal, Modifier.clickable(role = Role.Button) { text = (text + chip).take(Flame.MAX_LEN) }) }
                 Box(Modifier.weight(1f)); Small("${text.length}/${Flame.MAX_LEN}")
             }
             Small("{nama} jadi nama temanmu, {hari} jadi angka api setelah pesan ini.")

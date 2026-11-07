@@ -64,6 +64,10 @@ class Prefs private constructor(val sp: SharedPreferences) {
     /** "tanggal|dump SwipeCounter": hash reel yang udah kelihatan hari ini. */
     var seenStr by str("")
     var flameOn by bool(false)
+    /** true = kirim ke semua yang lagi ngestreak (termasuk api baru), bukan cuma yang dicentang. */
+    var flameAll by bool(true)
+    /** true = kartu hitung mundur 5 detik dulu sebelum jalan. Default langsung jalan. */
+    var flameCountdown by bool(false)
     var flameWarned by bool(false)
     var flameSnoozeUntil by long(0)
     /** Tanggal (hari api, ganti jam 00.00) terakhir Jaga Api selesai jalan. */

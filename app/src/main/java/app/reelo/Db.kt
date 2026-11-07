@@ -40,6 +40,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "reelo.db", n
         } finally { endTransaction() }
     }
 
+    /** Dari sapuan Jaga Api: catat teman yang kelihatan punya api (teman baru masuk tanpa centang). */
+    fun touchFriend(name: String, streak: Int) = writableDatabase.run {
+        execSQL("INSERT OR IGNORE INTO friend(name, \"on\") VALUES(?, 0)", arrayOf<Any>(name))
+        execSQL("UPDATE friend SET streak = ?, restore = 0 WHERE name = ?", arrayOf<Any>(streak, name))
+    }
+
     fun setFriendOn(name: String, on: Boolean) { writableDatabase.execSQL("UPDATE friend SET \"on\" = ? WHERE name = ?", arrayOf<Any>(if (on) 1 else 0, name)) }
 
     fun msgs(): List<Msg> = readableDatabase.rawQuery("SELECT id, text, \"on\" FROM msg ORDER BY id", null).use { c ->

@@ -3,6 +3,38 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-07 · Jaga Api mode sapu: cepat, langsung ke semua yang ngestreak
+
+**Kenapa.** Kirim pertama Bryan jalan (22/22 terkirim) tapi makan 2 menit 43 detik, sekitar 7 detik per orang, karena
+tiap teman dicari ulang dari atas Inbox. Bryan mau langsung ke semua orang yang ngestreak, pesannya cukup emoji
+nunjuk 👉, dan nggak pakai lama.
+
+**Perubahan.**
+- `TikTokBot.sweep()` ganti `send()`: Inbox disapu **sekali** dari atas ke bawah, dan tiap baris yang punya api, belum
+  kebagian, dan lolos `want` langsung dikirim. Chat yang barusan dikirim naik ke atas Inbox, makanya tiap kali daftar
+  dibaca ulang dan dipilih baris pertama yang belum kebagian. Berhenti kalau 2x scroll nggak nambah nama baru.
+- `chat()`:
+  - nggak pakai `ACTION_FOCUS` (keyboard nggak kebuka, jadi balik ke Inbox cukup sekali BACK);
+  - polling layar tiap 150 ms (dulu 300);
+  - jeda tetap antar teman dihapus.
+
+  Perkiraan 2–3 detik per teman (belum diukur, lihat di bawah).
+- **Mode "Semua yang ngestreak"** (`Prefs.flameAll`, default nyala): tiap baris Inbox yang ada apinya ikut, termasuk api
+  baru yang belum pernah dipindai. Kalau dimatiin, balik ke centang manual. Teman yang ketemu pas nyapu dicatat ke
+  tabel `friend` (`Db.touchFriend`) dan angka apinya di-update.
+- **Langsung jalan tanpa hitung mundur** (`Prefs.flameCountdown`, default mati). Kartu progres + Batal tetap ada.
+  Tombol debug tetap pakai hitung mundur.
+- Chip 👉 ditaruh paling depan di layar Pesan.
+
+**Belum dicek di HP.** Kecepatan mode sapu belum diukur, karena semua teman udah kebagian pesan hari ini (aturan
+maksimal 1 pesan per teman per hari) dan ngetes lagi berarti ngirim ulang ke 22 orang. Run otomatis pertama: malam ini
+00.00, atau pas HP pertama dibuka setelahnya. Hasilnya cek di Riwayat; logcat `ReeloBot` nampilin
+`sweep: N dikirim, M halaman`.
+
+**Insiden pas ngetes (biar nggak keulang).** Waktu survei tombol Share, tap koordinat buta di TikTok nyasar karena
+TikTok kebuka di Inbox, bukan feed, dan sesuatu kekirim ke satu akun ("Sent to …"). Pelajarannya: jangan tap koordinat
+di app chat. Cek isi layar dulu (screenshot/dump), dan kalau bisa pakai aksi ke node.
+
 ## 2026-11-07 · Jaga Api: pindai dites di HP + perbaikan
 
 **Dicek di Xiaomi 14T.** Pindai Inbox jalan sekitar 15 detik (8 halaman, 60 chat) dan hasilnya cocok dengan Inbox:

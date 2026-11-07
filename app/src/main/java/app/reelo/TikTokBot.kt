@@ -54,22 +54,45 @@ class TikTokBot(private val svc: AccessibilityService) {
     }
 
     /**
-     * Kirim pesan ke tiap teman. [each] dipanggil per teman: note null = terkirim, selain itu alasan gagal.
-     * [progress] buat overlay (index yang lagi dikerjain, total, nama).
+     * Sapu Inbox sekali dari atas ke bawah: tiap baris yang punya api, belum dikirim, dan [want] = true langsung
+     * dibuka, dikirimin pesan dari [pick] (id pesan, teks), lalu balik. Nggak nyari ulang dari atas per teman,
+     * jadi cepat (sekitar 2-3 detik per teman). Chat yang barusan dikirim naik ke atas Inbox, makanya tiap kali
+     * daftar dibaca ulang dan dipilih baris pertama yang belum kebagian.
+     * [each]: nama, angka api, id pesan, note (null = terkirim). [total] cuma perkiraan buat progres.
      */
-    fun send(items: List<Pair<Friend, Msg>>, back: String?, progress: (Int, Int, String) -> Unit, each: (Friend, Msg, String?) -> Unit, done: (Boolean) -> Unit) {
+    fun sweep(
+        want: (String) -> Boolean, pick: (String, Int) -> Pair<Long, String>?, total: Int, back: String?,
+        progress: (Int, Int, String) -> Unit, each: (String, Int, Long?, String?) -> Unit, done: (Boolean) -> Unit,
+    ) {
         if (running) return
         job = scope.launch {
             var finished = false
             try {
                 val pkg = TikTokUi.pkg(svc)
-                if (pkg == null || !open(pkg) || !inbox()) { items.forEach { (f, m) -> each(f, m, "Inbox TikTok nggak kebuka") }; finished = true; return@launch }
-                items.forEachIndexed { i, (f, m) ->
-                    progress(i, items.size, f.name)
-                    each(f, m, sendOne(f.name, Flame.fill(m.text, f.name, f.streak)))
-                    delay(800)
+                if (pkg == null || !open(pkg) || !inbox()) { log("sweep: inbox gagal"); return@launch }
+                toTop()
+                val handled = HashSet<String>(); val seen = HashSet<String>()
+                var idle = 0; var pages = 0
+                while (idle < 2 && pages < 40) {
+                    val r = root() ?: break
+                    val rs = rows(r)
+                    seen += rs.map { it.name }
+                    val next = rs.firstOrNull { it.streak > 0 && it.name !in handled && want(it.name) }
+                    if (next != null) {
+                        handled += next.name
+                        val m = pick(next.name, next.streak) ?: continue
+                        progress(handled.size - 1, maxOf(total, handled.size), next.name)
+                        each(next.name, next.streak, m.first, chat(next.node, m.second))
+                        continue
+                    }
+                    val before = seen.size
+                    if (list(r)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) != true) break
+                    delay(350); pages++
+                    root()?.let { rows(it).forEach { row -> seen += row.name } }
+                    idle = if (seen.size == before) idle + 1 else 0
                 }
-                progress(items.size, items.size, "")
+                log("sweep: ${handled.size} dikirim, $pages halaman")
+                progress(handled.size, maxOf(total, handled.size), "")
                 finished = true
             } finally { leave(back); done(!finished) }
         }
@@ -87,7 +110,7 @@ class TikTokBot(private val svc: AccessibilityService) {
 
     private suspend fun <T> waitFor(ms: Long = 8_000, f: (AccessibilityNodeInfo) -> T?): T? {
         val end = SystemClock.uptimeMillis() + ms
-        while (SystemClock.uptimeMillis() < end) { root()?.let { r -> f(r)?.let { return it } }; delay(300) }
+        while (SystemClock.uptimeMillis() < end) { root()?.let { r -> f(r)?.let { return it } }; delay(150) }
         return null
     }
 
@@ -161,31 +184,16 @@ class TikTokBot(private val svc: AccessibilityService) {
         repeat(12) { if (root()?.let(::list)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) != true) return; delay(400) }
     }
 
-    /** Cari baris teman di Inbox (dari atas, scroll ke bawah sampai 15x). */
-    private suspend fun findRow(name: String): AccessibilityNodeInfo? {
-        toTop()
-        for (i in 0 until 15) {
-            val r = root() ?: return null
-            rows(r).firstOrNull { it.name == name }?.let { return it.node }
-            if (list(r)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) != true) return null
-            delay(600)
-        }
-        return null
-    }
-
-    /** null = terkirim. */
-    private suspend fun sendOne(name: String, text: String): String? {
-        if (!inbox()) return "Inbox TikTok nggak kebuka"
-        val row = findRow(name) ?: return "Chat nggak ketemu di Inbox"
+    /** Buka chat dari baris Inbox, ketik, kirim, cek kekirim, balik. null = terkirim, selain itu alasan gagal. */
+    private suspend fun chat(row: AccessibilityNodeInfo, text: String): String? {
         click(row)
-        val input = waitFor { r -> r.all().firstOrNull { it.isEditable } } ?: return backTo("Kolom pesan nggak muncul")
-        input.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        val input = waitFor(6_000) { r -> r.all().firstOrNull { it.isEditable } } ?: return backTo("Kolom pesan nggak muncul")
+        // tanpa ACTION_FOCUS biar keyboard nggak kebuka (balik ke Inbox cukup sekali BACK)
         input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) })
-        delay(500)
-        val send = waitFor(4_000) { r -> r.all().firstOrNull { it.contentDescription?.toString() in TikTokUi.SEND && it.isVisibleToUser } }
+        val send = waitFor(3_000) { r -> r.all().firstOrNull { it.contentDescription?.toString() in TikTokUi.SEND && it.isVisibleToUser } }
             ?: return backTo("Tombol kirim nggak ketemu")
         click(send)
-        val ok = waitFor(5_000) { r -> r.all().firstOrNull { !it.isEditable && it.text?.toString()?.trim() == text.trim() } } != null
+        val ok = waitFor(3_000) { r -> r.all().firstOrNull { !it.isEditable && it.text?.toString()?.trim() == text.trim() } } != null
         return backTo(if (ok) null else "Pesan nggak kelihatan terkirim")
     }
 
@@ -193,7 +201,8 @@ class TikTokBot(private val svc: AccessibilityService) {
     private suspend fun backTo(note: String?): String? {
         repeat(3) {
             if (root()?.all()?.any(TikTokUi::isName) == true) return note
-            svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK); delay(600)
+            svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            if (waitFor(1_500) { r -> r.all().firstOrNull(TikTokUi::isName) } != null) return note
         }
         return note
     }
