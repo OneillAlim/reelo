@@ -202,7 +202,7 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
      */
     private fun yRange(left: Boolean): IntRange {
         val top = ctx.dp(40) + if (inReel) (screenH * .1f).toInt() else 0
-        val bottom = when { !inReel -> screenH - bw - ctx.dp(90); left -> (screenH * .6f).toInt(); else -> (screenH * .26f).toInt() }
+        val bottom = when { !inReel -> screenH - bw - ctx.dp(160); left -> (screenH * .6f).toInt(); else -> (screenH * .26f).toInt() }
         return top..bottom.coerceAtLeast(top + 1)
     }
 

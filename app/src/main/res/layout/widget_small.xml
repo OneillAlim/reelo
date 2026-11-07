@@ -1,10 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/w_root" android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@drawable/widget_bg" android:gravity="center" android:orientation="vertical" android:padding="8dp">
-    <ImageView android:id="@+id/w_mascot" android:layout_width="56dp" android:layout_height="56dp" android:contentDescription="@string/app_name" />
-    <TextView android:id="@+id/w_count" android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:fontFamily="@font/jersey" android:textColor="#2B2118" android:textSize="34sp" />
-    <TextView android:id="@+id/w_left" android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:textColor="#7D6B5B" android:textSize="11sp" />
-</LinearLayout>
+<!-- Latar (w_bg) dan bohlam/bintang (w_fx) digambar WidgetArt. Maskot = 6 frame di ViewFlipper biar bisa gerak. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root" android:layout_width="match_parent" android:layout_height="match_parent">
+    <ImageView android:id="@+id/w_bg" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+    <ViewFlipper android:id="@+id/w_fx" android:layout_width="match_parent" android:layout_height="@dimen/w_fx_h" android:autoStart="true" android:flipInterval="700">
+            <ImageView android:id="@+id/w_fx0" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+            <ImageView android:id="@+id/w_fx1" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+    </ViewFlipper>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:orientation="vertical" android:padding="8dp">
+        <ViewFlipper android:id="@+id/w_flip" android:layout_width="60dp" android:layout_height="60dp" android:autoStart="true" android:flipInterval="600">
+            <ImageView android:id="@+id/w_m0" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+            <ImageView android:id="@+id/w_m1" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+            <ImageView android:id="@+id/w_m2" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+            <ImageView android:id="@+id/w_m3" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+            <ImageView android:id="@+id/w_m4" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+            <ImageView android:id="@+id/w_m5" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+        </ViewFlipper>
+        <ImageView android:id="@+id/w_count" android:layout_width="wrap_content" android:layout_height="wrap_content" android:importantForAccessibility="no" />
+        <ImageView android:id="@+id/w_left" android:layout_width="wrap_content" android:layout_height="wrap_content" android:importantForAccessibility="no" />
+    </LinearLayout>
+    <TextView android:id="@+id/w_style" android:layout_width="36dp" android:layout_height="36dp" android:layout_gravity="bottom|end"
+        android:gravity="center" android:text="◆" android:textSize="13sp" android:contentDescription="Ganti gaya widget" />
+</FrameLayout>

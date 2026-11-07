@@ -43,6 +43,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         nm.createNotificationChannel(NotificationChannel(CH_NUDGE, "Pengingat jatah", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(CH_FLOAT, "Maskot", NotificationManager.IMPORTANCE_LOW))
         float = FloatingMascot(this, p, ::line, ::hideToNotification, ::undo)
+        p.seenStr.split('|', limit = 2).takeIf { it.size == 2 && it[0] == day.toString() }?.let { counter.load(it[1]) }
         refreshFloat()
         running = true
         Live.bump()
@@ -94,6 +95,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         val parts = page(app)
         val fp = parts?.let(Detectors::fingerprint)
         val n = counter.settle(app, fp)
+        if (fp != null) p.seenStr = "$day|${counter.dump()}"
         if (debug) Log.d("ReeloScroll", "$app settle +$n fp=$fp ${parts?.mapNotNull(Detectors::clean)?.distinct()?.take(6)}")
         if (n <= 0) return
         val now = System.currentTimeMillis()

@@ -54,6 +54,14 @@ class StatsTest {
         assertEquals(1, go(1, 'B'.code))
     }
 
+    @Test fun seenSurvivesRestart() {
+        val a = SwipeCounter()
+        a.scroll(App.IG, 2285, 2285); assertEquals(1, a.settle(App.IG, 42))
+        val b = SwipeCounter(); b.load(a.dump())
+        b.scroll(App.IG, 2285, 2285); assertEquals(0, b.settle(App.IG, 42))
+        b.load(""); b.load("NGACO:1,2")
+    }
+
     @Test fun fingerprintIgnoresVolatileText() {
         val a = Detectors.fingerprint(listOf("@budi", "Share video. 1,2K shares", "Like video. 72 likes", "0 minutes 5 seconds of 1 minute", "Pause video", "masak nasi goreng"))
         val b = Detectors.fingerprint(listOf("@budi", "Like video. 73 likes", "Share video. 998 shares", "Play video", "masak nasi goreng", null))

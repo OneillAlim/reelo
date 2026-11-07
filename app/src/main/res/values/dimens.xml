@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- tinggi lapisan bohlam/bintang di atas widget -->
+    <dimen name="w_fx_h">44dp</dimen>
+</resources>

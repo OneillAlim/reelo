@@ -209,4 +209,14 @@ class SwipeCounter {
     fun reset(app: App) { st.remove(app) }
 
     fun newDay() = seen.clear()
+
+    /** Simpan/pulihin sidik jari (angka hash, bukan teks) biar restart service nggak bikin reel lama kehitung lagi. */
+    fun dump(): String = seen.entries.joinToString(";") { (a, s) -> "${a.name}:${s.joinToString(",")}" }
+
+    fun load(s: String) {
+        s.split(';').forEach { part ->
+            val app = App.entries.firstOrNull { it.name == part.substringBefore(':') } ?: return@forEach
+            seen.getOrPut(app) { LinkedHashSet() } += part.substringAfter(':').split(',').mapNotNull { it.toIntOrNull() }
+        }
+    }
 }

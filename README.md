@@ -16,10 +16,14 @@ Design prototype (screens, themes, mascots): https://claude.ai/artifact/Ckkk4Ghg
   ganti karakter pas pindah app, badge angka kedip makin sering kalau makin dekat jatah
 - 4 maskot pixel (Reelo, Popi, Tiko, Telo) x 5 mood, tiap app punya maskot sendiri (default TikTok = Tiko,
   Shorts = Telo, IG = Popi, bisa diganti di Pengaturan), kostum dari Rol Film, evolusi, streak + Freeze, 12 lencana
-- Recap 7 hari yang bisa dibagikan sebagai gambar, widget 2x2 dan 4x2
+- Recap 7 hari yang bisa dibagikan sebagai gambar
+- Widget 2x2, 4x2, dan papan marquee 4x1: latar pixel (Langit yang ikut jam, Bioskop, Tiket; ketuk ◆ buat ganti),
+  maskot goyang + bintang/bohlam kelip lewat ViewFlipper, makin dekat jatah makin heboh
 - Tema Siang / Bioskop Malam / Ikut HP, otomatis gelap saat Jam Malam
 - Cek kesehatan (service, izin, optimasi baterai per merek), ekspor CSV, hapus data
-- Tanpa izin INTERNET. Semua data cuma ada di HP.
+- Tanpa izin INTERNET. Semua data cuma ada di HP. Teks di layar reel (nama akun, caption) cuma dipakai buat sidik jari
+  anti dobel: diubah jadi hash, teksnya dibuang; hash-nya disimpan sampai jam 04.00 biar restart nggak bikin dobel. (Build debug nge-log potongannya ke logcat buat
+  debugging; build release nggak.)
 
 ## Lampu dan kedip
 Satu skala "panas" (`Stats.heat`) dipakai di Beranda, maskot melayang, dan tiket:

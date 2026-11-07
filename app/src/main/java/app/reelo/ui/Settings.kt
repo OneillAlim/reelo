@@ -217,7 +217,7 @@ fun Onboarding() {
         if (usageOk && svcOk) Msg("Penghitung reels nyala. Aku siap ngitung.")
         when {
             !usageOk -> Perm("Data pemakaian", "Buat screen time dan berapa kali kamu buka TikTok, YouTube, dan Instagram. Cari Reelo di daftar lalu izinkan.", "Buka pengaturan") { open(ctx, Settings.ACTION_USAGE_ACCESS_SETTINGS) }
-            !svcOk -> Perm("Penghitung reels", "Pakai layanan Aksesibilitas. Aku cuma lihat kapan kamu swipe di TikTok, Shorts, dan IG Reels, buat ngitung dan nampilin maskot melayang. Aku nggak baca isi video, caption, atau chat.", "Buka pengaturan") { open(ctx, Settings.ACTION_ACCESSIBILITY_SETTINGS) }
+            !svcOk -> Perm("Penghitung reels", "Pakai layanan Aksesibilitas. Aku lihat kapan kamu swipe di TikTok, Shorts, dan IG Reels, buat ngitung dan nampilin maskot melayang. Biar reel yang sama nggak kehitung dua kali, aku ngecek teks di reel itu (nama akun, caption), diubah jadi kode acak, lalu teksnya dibuang. Nggak disimpan, nggak dikirim, dan aku nggak buka chat.", "Buka pengaturan") { open(ctx, Settings.ACTION_ACCESSIBILITY_SETTINGS) }
             !notif -> {
                 Perm("Notifikasi", "Buat ngingetin pas jatah tinggal sedikit dan buat munculin lagi maskot yang kamu sembunyikan.", "Izinkan") {
                     if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)

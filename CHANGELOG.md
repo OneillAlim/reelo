@@ -3,6 +3,51 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-07 · Widget baru: latar pixel, gerak, 3 gaya, papan marquee
+
+**Kenapa.** Bryan nggak suka widget lama (kotak krem polos, font nggak pixel). Dia minta ada latar, bisa gerak lucu,
+dan tampilannya bisa beda-beda.
+
+**Perubahan.**
+- `WidgetArt.kt` (baru) gambar semua grafis widget pakai kotak pixel (1 pixel seni = 3 dp):
+  - `scene(style, …)`: latar penuh dengan sudut bulat 16 dp. Ada 3 gaya (`WStyle`):
+    - **Langit:** warnanya ngikutin jam (pagi 5–9, siang 10–14, senja 15–18, malam). Ada matahari + awan atau
+      bulan, bukit dua lapis, dan gedung bioskop kecil yang jendelanya nyala pas malam.
+    - **Bioskop:** tirai merah di kiri-kanan, rumbai, layar remang.
+    - **Tiket:** kertas krem bergaris, pita merah berlubang, garis sobek.
+  - `fx(...)`: lapisan yang kedip di atas widget: bintang (Langit malam), burung kepak (Langit siang), bohlam yang
+    warnanya ikut heat (Bioskop), kilau (Tiket).
+  - `mascot(...)`: 6 frame maskot (diam, lompat, diam, lompat, diam, kedip).
+  - `sign` + `signFx`: papan marquee dengan bohlam keliling yang kejar-kejaran (3 frame).
+  - `label(...)`: teks Jersey 15 digambar jadi bitmap. Ternyata launcher HyperOS nggak mau pakai `@font/jersey` di
+    TextView widget, jadi angka dan label pixel harus jadi gambar.
+- **Animasi:** widget nggak bisa jalanin animasi sendiri, jadi frame-nya diputar `ViewFlipper` (`autoStart`). Kecepatan
+  maskot ikut heat (`WidgetArt.flipMs`: 800/600/420/300 ms), jadi makin dekat jatah makin heboh.
+- **Ganti gaya:** tombol ◆ di pojok kanan bawah widget kecil dan lebar. Gaya disimpan per widget (`wstyle_<id>` di
+  prefs) lewat broadcast `app.reelo.WIDGET_STYLE` ke provider, dan dihapus pas widget dibuang (`onDeleted`).
+- **Widget ketiga:** `MarqueeWidget` 4x1 "Reelo papan bioskop", berisi maskot, "HARI INI", angka glow kuning
+  (merah kalau lewat jatah), dan sisa.
+- Semua provider turunan `ReeloWidget`. Ukuran gambar diambil dari `getAppWidgetOptions`, dan digambar ulang pas
+  widget di-resize (`onAppWidgetOptionsChanged`).
+- Widget lebar: panel kertas di kanan buat baris per app (maskot mini per app + bar warna sesuai heat app itu).
+
+**Lainnya yang dibenerin.**
+- **Teks privasi nggak akurat lagi.** Sejak ada sidik jari, Reelo memang membaca teks di layar reel. Deskripsi
+  aksesibilitas (`a11y_desc`) dan teks izin di onboarding sekarang jujur: teks diubah jadi hash, teksnya dibuang,
+  nggak disimpan dan nggak dikirim.
+- **Sidik jari hilang tiap restart service.** Restart karena update app atau HyperOS bikin reel lama bisa kehitung
+  lagi. Sekarang hash-nya disimpan di `Prefs.seenStr` (format `tanggal|dump`) dan dipulihin pas service nyambung,
+  cuma kalau tanggalnya sama (`SwipeCounter.dump/load`). Tes: `StatsTest.seenSurvivesRestart`.
+- **Gambar recap:** teks Jersey di gambar share ikut dikali `PX`.
+- **Maskot melayang di home screen nutupin dock.** Batas bawahnya sekarang 160 dp (dulu 90).
+
+**Dicek di HP (Xiaomi 14T).**
+- Widget kecil gaya Langit malam: bintang kelip dan maskot goyang (dicek lewat rekaman layar).
+- Tombol ◆: Langit → Bioskop → Tiket → Langit.
+
+**Belum dicek.** Widget lebar dan papan marquee belum dipasang di HP, dan Langit versi pagi/siang/senja baru keliatan
+di jam itu. Kalau ada yang aneh, gambarnya di `WidgetArt.scene` / `fx`.
+
 ## 2026-11-07 · Dicek di HP + perbaikan
 
 Semua yang di entri sebelumnya ("Perlu dicek di HP") udah dicek di Xiaomi 14T (Android 15), Siang dan Malam:

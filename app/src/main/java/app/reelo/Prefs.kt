@@ -61,6 +61,8 @@ class Prefs private constructor(val sp: SharedPreferences) {
     var blindStr by str("")
     /** "tanggal|kelipatan 10 terakhir yang udah dirayain di Beranda", biar lampu lari cuma sekali per kelipatan. */
     var milestone by str("")
+    /** "tanggal|dump SwipeCounter": hash reel yang udah kelihatan hari ini. */
+    var seenStr by str("")
     /** Tanggal terakhir konfeti tantangan diputar. */
     var cheered by str("")
     var limitTiktok by int(30)

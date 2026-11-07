@@ -171,7 +171,7 @@ fun shareRecap(ctx: Context, r: RecapData, m: Mascot) {
     val body = ResourcesCompat.getFont(ctx, R.font.rubik)
     val fg = 0xFFF6E7C8.toInt()
     fun text(s: String, x: Float, y: Float, size: Float, color: Int = fg, face: android.graphics.Typeface? = body, right: Boolean = false) =
-        c.drawText(s, x, y, Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = size; this.color = color; typeface = face; if (right) textAlign = Paint.Align.RIGHT })
+        c.drawText(s, x, y, Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = if (face === px) size * app.reelo.PX else size; this.color = color; typeface = face; if (right) textAlign = Paint.Align.RIGHT })
     val hole = Paint().apply { color = 0xFF0D0A10.toInt() }
     var x = 30f
     while (x < w - 30) { c.drawRect(x, 24f, x + 40, 54f, hole); c.drawRect(x, h - 54f, x + 40, h - 24f, hole); x += 80 }

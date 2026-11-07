@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Reelo</string>
-    <string name="a11y_desc">Reelo menghitung swipe di TikTok, YouTube Shorts, dan Instagram Reels, lalu menampilkan maskot melayang dan Pause Card saat jatah habis. Reelo tidak membaca isi video, caption, atau pesan, dan tidak punya izin internet.</string>
+    <string name="a11y_desc">Reelo menghitung swipe di TikTok, YouTube Shorts, dan Instagram Reels, lalu menampilkan maskot melayang dan Pause Card saat jatah habis. Supaya reel yang sama tidak dihitung dua kali, Reelo membaca teks di layar reel (nama akun, caption, judul lagu), mengubahnya jadi kode acak (hash), lalu membuang teksnya. Teks itu tidak disimpan dan tidak dikirim ke mana pun; Reelo tidak punya izin internet dan tidak membuka chat.</string>
     <string name="w_small">Reelo hari ini</string>
     <string name="w_wide">Reelo per app</string>
+    <string name="w_marquee">Reelo papan bioskop</string>
 </resources>
