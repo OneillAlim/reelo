@@ -4,7 +4,7 @@
     android:background="@drawable/widget_bg" android:gravity="center" android:orientation="vertical" android:padding="8dp">
     <ImageView android:id="@+id/w_mascot" android:layout_width="56dp" android:layout_height="56dp" android:contentDescription="@string/app_name" />
     <TextView android:id="@+id/w_count" android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:fontFamily="@font/pixelify" android:textColor="#2B2118" android:textSize="28sp" />
+        android:fontFamily="@font/jersey" android:textColor="#2B2118" android:textSize="34sp" />
     <TextView android:id="@+id/w_left" android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:textColor="#7D6B5B" android:textSize="11sp" />
 </LinearLayout>

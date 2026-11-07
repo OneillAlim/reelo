@@ -38,11 +38,19 @@ private fun box(fill: Int, stroke: Int, w: Int) = GradientDrawable().apply { set
 @SuppressLint("ViewConstructor")
 class SpriteView(ctx: Context, private val p: Prefs, private val px: Int) : View(ctx) {
     var mood = Mood.SEGAR
+    var mascot: Mascot = p.mascot
     var count: Int? = null
     var sleeping = false
+    /** 1 hadap kanan, -1 hadap kiri (sprite dicerminkan). */
+    var facing = 1
+    var walking = false
+    /** Badge angka kedip cepat sampai waktu ini (pas nembus kelipatan 10). */
+    var flashUntil = 0L
+    /** 0 tenang, 1 waspada, 2 panas, 3 lewat jatah. Makin tinggi makin sering badge kedip. */
+    var heat = 0
     private val t0 = (Math.random() * 3600).toLong()
     private val badge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = ResourcesCompat.getFont(ctx, R.font.pixelify); textSize = ctx.dp(12).toFloat(); color = Color.WHITE; textAlign = Paint.Align.CENTER
+        typeface = ResourcesCompat.getFont(ctx, R.font.jersey); textSize = ctx.dp(14).toFloat(); color = Color.WHITE; textAlign = Paint.Align.CENTER
     }
     private val fill = Paint()
 
@@ -50,20 +58,26 @@ class SpriteView(ctx: Context, private val p: Prefs, private val px: Int) : View
 
     override fun onDraw(c: Canvas) {
         val reduce = p.reduceMotion
-        val t = System.currentTimeMillis() + t0
-        val per = when (mood) { Mood.SEGAR -> 380; Mood.SANTAI -> 520; Mood.CAPEK -> 800; Mood.TELER -> 650; Mood.PINGSAN -> 0 }
+        val now = System.currentTimeMillis()
+        val t = now + t0
+        val per = if (walking) 140 else when (mood) { Mood.SEGAR -> 380; Mood.SANTAI -> 520; Mood.CAPEK -> 800; Mood.TELER -> 650; Mood.PINGSAN -> 0 }
         val ph = if (reduce || per == 0 || sleeping) 0 else ((t / per) % 2).toInt()
-        val dx = if (mood == Mood.TELER && !reduce && !sleeping) (if (ph == 1) 1 else -1) else 0
+        val dx = if (mood == Mood.TELER && !reduce && !sleeping && !walking) (if (ph == 1) 1 else -1) else 0
         val dy = if (mood != Mood.TELER && ph == 1) -1 else 0
         val blink = sleeping || (!reduce && t % 3400 < 150)
         val s = px.toFloat()
-        Sprite.draw(c, Sprite.grid(p.mascot, mood, blink, p.acc), s, dx * s, context.dp(10) + dy * s)
+        c.save()
+        if (facing < 0) c.scale(-1f, 1f, (Sprite.N + 2) * s / 2, 0f)
+        Sprite.draw(c, Sprite.grid(mascot, mood, blink, p.acc), s, dx * s, context.dp(10) + dy * s)
+        c.restore()
         count?.let { n ->
             val label = n.toString()
             val w = maxOf(context.dp(22).toFloat(), badge.measureText(label) + context.dp(10))
             val r = width.toFloat(); val bh = context.dp(18).toFloat()
+            // kedip: 200 ms nyala/mati pas nembus kelipatan 10, lalu makin sering sesuai heat (maks 2,5x per detik)
+            val off = !reduce && (now < flashUntil && (now / 200) % 2 == 1L || heat > 0 && (now / BLINK[heat]) % 2 == 1L)
             fill.color = 0xFF2B2118.toInt(); c.drawRect(r - w - 2, 0f, r, bh + 2, fill)
-            fill.color = 0xFFE8553D.toInt(); c.drawRect(r - w, 2f, r - 2, bh, fill)
+            fill.color = if (off) HOT[heat].second else HOT[heat].first; c.drawRect(r - w, 2f, r - 2, bh, fill)
             c.drawText(label, r - w / 2 - 1, bh - context.dp(4), badge)
         }
         if (sleeping) {
@@ -72,11 +86,19 @@ class SpriteView(ctx: Context, private val p: Prefs, private val px: Int) : View
             c.drawText("z z", context.dp(2).toFloat(), context.dp(12) - k * 2f, badge.apply { alpha = 255 - k * 50 })
             badge.alpha = 255; badge.textAlign = Paint.Align.CENTER
         }
-        if (!reduce) postInvalidateDelayed(90)
+        if (!reduce) postInvalidateDelayed(if (walking) 60 else 90)
+    }
+
+    companion object {
+        private val BLINK = longArrayOf(0, 900, 500, 400)
+        private val HOT = listOf(
+            0xFFE8553D.toInt() to 0xFFF2B544.toInt(), 0xFFE8553D.toInt() to 0xFFF2B544.toInt(),
+            0xFFE8553D.toInt() to 0xFFFF8A3D.toInt(), 0xFFB53B2A.toInt() to 0xFFFF2E2E.toInt(),
+        )
     }
 }
 
-class FloatingMascot(private val ctx: Context, private val p: Prefs, private val line: () -> String, private val onTrash: () -> Unit) {
+class FloatingMascot(private val ctx: Context, private val p: Prefs, private val line: () -> String, private val onTrash: () -> Unit, private val undo: () -> String) {
     private val wm = ctx.getSystemService(WindowManager::class.java)
     private val view = SpriteView(ctx, p, ctx.dp(2) + ctx.dp(1) / 2)
     private val lp = overlayParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT)
@@ -95,13 +117,17 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
     private var sayShown = false
     private val trash = TextView(ctx).apply {
         text = "x"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = 22f
-        typeface = ResourcesCompat.getFont(ctx, R.font.pixelify); background = box(0x66000000, Color.WHITE, ctx.dp(3))
+        typeface = ResourcesCompat.getFont(ctx, R.font.jersey); background = box(0x66000000, Color.WHITE, ctx.dp(3))
     }
     private val trashLp = overlayParams(ctx.dp(64), ctx.dp(64), touchable = false)
     private var trashShown = false
     private var menu: LinearLayout? = null
 
     private val idle = Runnable { view.sleeping = true; view.invalidate() }
+    private val rnd = java.util.Random()
+    private val patrol = Runnable { roam() }
+    private var anim: ValueAnimator? = null
+    private var lastCount = -1
     private val unsay = Runnable { if (sayShown) { wm.removeView(say); sayShown = false } }
 
     init {
@@ -110,7 +136,11 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
         val detector = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent) = true
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                if (peek != 0) { peek = 0; snap(); speak("Aku balik!") } else { hop(); speak(if (view.sleeping) "Hoaam... aku ketiduran." else line()) }
+                when {
+                    peek != 0 -> { peek = 0; snap(); speak("Aku balik!") }
+                    view.sleeping -> { hop(34); speak("!"); view.postDelayed({ speak("Hoaam... aku ketiduran.") }, 700) }
+                    else -> { hop(); speak(line()) }
+                }
                 wake(); return true
             }
             override fun onDoubleTap(e: MotionEvent): Boolean {
@@ -128,7 +158,7 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
 
     private fun drag(e: MotionEvent) {
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y; dragging = false; wake(); closeMenu() }
+            MotionEvent.ACTION_DOWN -> { anim?.cancel(); view.walking = false; sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y; dragging = false; wake(); closeMenu() }
             MotionEvent.ACTION_MOVE -> {
                 if (!dragging && hypot(e.rawX - sx, e.rawY - sy) > slop) { dragging = true; peek = 0; unsay.run(); closeMenu(); showTrash() }
                 if (dragging) {
@@ -163,25 +193,76 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
         p.floatX = x; p.floatY = lp.y
     }
 
-    private fun animateTo(x: Int, y: Int) {
+    /** Pindah ke (x, y). arc > 0 = lompat melengkung setinggi arc px. Gerak patah-patah biar kerasa pixel. */
+    private fun animateTo(x: Int, y: Int, ms: Long = 250, arc: Int = 0, steps: Int = 5, end: () -> Unit = {}) {
         val fx = lp.x; val fy = lp.y
-        ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = if (p.reduceMotion) 0 else 250; interpolator = STEPS5
-            addUpdateListener { if (attached) { val f = it.animatedValue as Float; lp.x = (fx + (x - fx) * f).toInt(); lp.y = (fy + (y - fy) * f).toInt(); wm.updateViewLayout(view, lp) } }
-        }.start()
+        anim?.cancel()
+        anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = if (p.reduceMotion) 0 else ms
+            interpolator = android.animation.TimeInterpolator { (it * steps).toInt() / steps.toFloat() }
+            addUpdateListener {
+                if (!attached) return@addUpdateListener
+                val f = it.animatedValue as Float
+                lp.x = (fx + (x - fx) * f).toInt(); lp.y = (fy + (y - fy) * f - arc * 4 * f * (1 - f)).toInt()
+                wm.updateViewLayout(view, lp)
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) { if (anim === a) { anim = null; end() } }
+            })
+            start()
+        }
     }
 
-    private fun hop() {
+    private fun hop(h: Int = 14) {
         if (p.reduceMotion) return
-        view.animate().translationY(-ctx.dp(14).toFloat()).setDuration(180).setInterpolator(STEPS5).withEndAction {
+        view.animate().translationY(-ctx.dp(h).toFloat()).setDuration(180).setInterpolator(STEPS5).withEndAction {
             view.animate().translationY(0f).setDuration(220).setInterpolator(STEPS5).start()
         }.start()
     }
 
+    /** Geleng kiri-kanan, dipakai pas jatah hampir habis. */
+    private fun shake() {
+        if (p.reduceMotion) return
+        val d = ctx.dp(4).toFloat()
+        ValueAnimator.ofFloat(0f, d, -d, d, -d, 0f).apply {
+            duration = 420; interpolator = android.animation.TimeInterpolator { (it * 6).toInt() / 6f }
+            addUpdateListener { view.translationX = it.animatedValue as Float }
+            start()
+        }
+    }
+
     private fun wake() {
         view.sleeping = false; view.invalidate()
-        view.removeCallbacks(idle); view.postDelayed(idle, 10_000)
+        view.removeCallbacks(idle); view.postDelayed(idle, 45_000)
+        schedule()
     }
+
+    private fun schedule() {
+        view.removeCallbacks(patrol)
+        if (!p.reduceMotion) view.postDelayed(patrol, 6_000L + rnd.nextInt(9_000))
+    }
+
+    /**
+     * Jalan-jalan sendiri kalau lagi nganggur: nyusurin pinggir layar ke tinggi acak, kadang lompat ke sisi seberang.
+     * Berhenti kalau lagi tidur, di-drag, ngintip, ngomong, atau menu kebuka.
+     */
+    private fun roam() {
+        if (!attached || dragging || peek != 0 || menu != null || sayShown || view.sleeping || p.focusUntil > System.currentTimeMillis()) { schedule(); return }
+        val top = ctx.dp(40); val bottom = (screenH - bw - ctx.dp(90)).coerceAtLeast(top + 1)
+        val left = lp.x + bw / 2 < screenW / 2
+        if (rnd.nextInt(4) == 0) {
+            val x = if (left) screenW - bw - ctx.dp(6) else ctx.dp(6)
+            view.facing = if (left) 1 else -1
+            animateTo(x, lp.y, 700, arc = ctx.dp(90), steps = 10) { save() }
+        } else {
+            val y = top + rnd.nextInt(bottom - top)
+            view.walking = true
+            animateTo(lp.x, y, (kotlin.math.abs(y - lp.y) * 4L).coerceIn(400, 2600), steps = 24) { view.walking = false; save() }
+        }
+        schedule()
+    }
+
+    private fun save() { p.floatX = lp.x; p.floatY = lp.y }
 
     fun speak(text: String) {
         say.text = text
@@ -203,6 +284,7 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = ctx.dp(4) })
         item("Buka Reelo") { ctx.startActivity(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         item("Fokus 25 menit") { p.focusUntil = System.currentTimeMillis() + 25 * 60_000; Live.bump(); speak("Oke, 25 menit tanpa reels. Aku jagain.") }
+        item("Salah hitung? Coret 1") { speak(undo()) }
         item("Sembunyikan 1 jam") { p.snoozeUntil = System.currentTimeMillis() + 60 * 60_000 }
         val mlp = overlayParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT).apply {
             flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
@@ -216,13 +298,32 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
 
     private fun closeMenu() { menu?.let { wm.removeView(it) }; menu = null }
 
-    fun show(mood: Mood, count: Int) {
-        view.mood = mood; view.count = count
-        if (!attached) { wm.addView(view, lp); attached = true; wake() }
+    /** heat: 0 tenang, 1 setengah jatah, 2 hampir habis, 3 lewat. */
+    fun show(mood: Mood, count: Int, mascot: Mascot, heat: Int) {
+        val prev = lastCount; lastCount = count
+        view.mood = mood; view.count = count; view.heat = heat
+        if (!attached) { view.mascot = mascot; wm.addView(view, lp); attached = true; wake(); view.invalidate(); return }
+        if (mascot != view.mascot) { puff(mascot); return }
+        if (prev in 0 until count) {
+            if (count / 10 > prev / 10) view.flashUntil = System.currentTimeMillis() + 1600
+            if (heat == 2) shake() else hop(if (heat == 3) 22 else 8)
+        }
         view.invalidate()
     }
 
+    /** Ganti maskot pas pindah app: mengecil jadi titik, maskot baru muncul sambil nyapa. */
+    private fun puff(next: Mascot) {
+        if (p.reduceMotion) { view.mascot = next; view.invalidate(); return }
+        view.animate().scaleX(0f).scaleY(0f).setDuration(160).setInterpolator(STEPS5).withEndAction {
+            view.mascot = next; wake()
+            view.animate().scaleX(1f).scaleY(1f).setDuration(260).setInterpolator(android.view.animation.OvershootInterpolator(3f)).withEndAction {
+                speak("${next.voice} ${line()}")
+            }.start()
+        }.start()
+    }
+
     fun hide() {
+        anim?.cancel(); view.walking = false; view.removeCallbacks(patrol)
         if (attached) { wm.removeView(view); attached = false }
         unsay.run(); hideTrash(); closeMenu()
     }
@@ -239,7 +340,7 @@ class HoldButton(ctx: Context, label: String, private val fg: Int, private val b
 
     init {
         text = label; gravity = Gravity.CENTER; textSize = 15f; setTextColor(fg)
-        typeface = ResourcesCompat.getFont(ctx, R.font.pixelify); setPadding(0, ctx.dp(10), 0, ctx.dp(10))
+        typeface = ResourcesCompat.getFont(ctx, R.font.jersey); setPadding(0, ctx.dp(10), 0, ctx.dp(10))
         background = box(Color.TRANSPARENT, fg, ctx.dp(2))
         contentDescription = "$label. Tahan dua detik"
         setOnTouchListener { _, e ->
@@ -270,7 +371,7 @@ class HoldButton(ctx: Context, label: String, private val fg: Int, private val b
 }
 
 class PauseCard(
-    private val ctx: Context, p: Prefs, night: Boolean, title: String, sub: String, allowContinue: Boolean,
+    private val ctx: Context, p: Prefs, night: Boolean, title: String, sub: String, allowContinue: Boolean, fgPkg: String?,
     onStop: () -> Unit, onContinue: () -> Unit, private val onClose: () -> Unit,
 ) {
     private val wm = ctx.getSystemService(WindowManager::class.java)
@@ -282,7 +383,7 @@ class PauseCard(
         val fg = if (night) 0xFFF3E9DC.toInt() else 0xFF2B2118.toInt()
         val red = if (night) 0xFFFF6B55.toInt() else 0xFFE0503A.toInt()
         val mus = if (night) 0xFFFFC458.toInt() else 0xFFF2B544.toInt()
-        val pix = ResourcesCompat.getFont(ctx, R.font.pixelify)
+        val pix = ResourcesCompat.getFont(ctx, R.font.jersey)
         val body = ResourcesCompat.getFont(ctx, R.font.rubik)
         root.setBackgroundColor(0xB80A060C.toInt())
         val col = LinearLayout(ctx).apply {
@@ -291,7 +392,7 @@ class PauseCard(
             background = box(card, if (night) 0xFF07060A.toInt() else 0xFF2B2118.toInt(), ctx.dp(3))
             elevation = ctx.dp(8).toFloat()
         }
-        val sprite = SpriteView(ctx, p, ctx.dp(5)).apply { mood = Mood.TELER }
+        val sprite = SpriteView(ctx, p, ctx.dp(5)).apply { mood = Mood.TELER; mascot = p.mascotFor(App.of(fgPkg)) }
         col.addView(sprite)
         fun text(s: String, size: Float, face: android.graphics.Typeface?, color: Int = fg) = TextView(ctx).apply {
             text = s; textSize = size; typeface = face; setTextColor(color); gravity = Gravity.CENTER; setPadding(0, ctx.dp(4), 0, ctx.dp(4))

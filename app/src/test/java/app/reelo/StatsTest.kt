@@ -101,6 +101,18 @@ class StatsTest {
         assertEquals(0, freeze)
     }
 
+    @Test fun challengeStates() {
+        val d = LocalDate.parse("2026-11-06")
+        val late = at("2026-11-07", 5)
+        assertEquals(Challenge.State.FAIL, Challenge.PAGI.check(d, listOf(Swipe(App.IG, at("2026-11-06", 9))), 60, late))
+        assertEquals(Challenge.State.OK, Challenge.PAGI.check(d, listOf(Swipe(App.IG, at("2026-11-06", 11))), 60, at("2026-11-06", 12)))
+        assertEquals(Challenge.State.ON, Challenge.MALAM.check(d, emptyList(), 60, at("2026-11-06", 22)))
+        assertEquals(Challenge.State.FAIL, Challenge.MALAM.check(d, listOf(Swipe(App.TIKTOK, at("2026-11-07", 1))), 60, late))
+        assertEquals(Challenge.State.OK, Challenge.SATU_APP.check(d, listOf(Swipe(App.IG, at("2026-11-06", 9))), 60, late))
+        assertEquals(Challenge.State.FAIL, Challenge.SETENGAH.check(d, List(31) { Swipe(App.IG, at("2026-11-06", 12)) }, 60, late))
+        assertEquals(0, Stats.heat(10, 60)); assertEquals(1, Stats.heat(30, 60)); assertEquals(2, Stats.heat(48, 60)); assertEquals(3, Stats.heat(61, 60))
+    }
+
     @Test fun thumbMeters() {
         assertEquals("6 m", Stats.formatMeters(Stats.meters(42)))
         assertEquals("1,5 km", Stats.formatMeters(Stats.meters(10_000)))

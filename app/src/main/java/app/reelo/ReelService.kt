@@ -42,7 +42,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CH_NUDGE, "Pengingat jatah", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(CH_FLOAT, "Maskot", NotificationManager.IMPORTANCE_LOW))
-        float = FloatingMascot(this, p, ::line, ::hideToNotification)
+        float = FloatingMascot(this, p, ::line, ::hideToNotification, ::undo)
         refreshFloat()
         running = true
         Live.bump()
@@ -60,7 +60,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     override fun onInterrupt() = Unit
 
     override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
-        if (key in setOf("floatOn", "snoozeUntil", "mascotName", "accName", "reduceMotion")) refreshFloat()
+        if (key in setOf("floatOn", "snoozeUntil", "mascotName", "mascotTiktok", "mascotShorts", "mascotIg", "accName", "reduceMotion")) refreshFloat()
     }
 
     override fun onAccessibilityEvent(e: AccessibilityEvent) {
@@ -160,7 +160,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         if (pause != null) return
         if (p.strict) leave()
         float?.hide()
-        pause = PauseCard(this, p, night(), title, sub, allowContinue = !p.strict, onStop = {
+        pause = PauseCard(this, p, night(), title, sub, allowContinue = !p.strict, fgPkg = fgPkg, onStop = {
             leave()
             if (!p.strict && p.grant(Badge.TAHAN_GODAAN)) Live.bump()
         }, onContinue = {
@@ -185,6 +185,13 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         runCatching { NotificationManagerCompat.from(this).notify(app.ordinal + 10, n2) }
     }
 
+    private fun undo(): String {
+        val app = App.of(fgPkg) ?: return "Buka TikTok, Shorts, atau IG dulu, biar aku tahu yang mana."
+        if (!db.removeLast(app, Days.start(Days.today()))) return "Belum ada ${app.label} yang bisa dicoret hari ini."
+        Live.bump(); Widgets.update(this); refreshFloat()
+        return "Oke, satu ${app.label} aku coret."
+    }
+
     private fun hideToNotification() {
         p.floatOn = false
         if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
@@ -203,9 +210,10 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         if (p.snoozeUntil > now) { h.removeCallbacksAndMessages(SNOOZE); h.postAtTime({ refreshFloat() }, SNOOZE, SystemClock.uptimeMillis() + (p.snoozeUntil - now)) }
         if (!visible) { f.hide(); return }
         val (_, counts) = today()
-        val total = counts.values.sum()
         val app = App.of(fgPkg)
-        f.show(Stats.mood(total, p.totalLimit), if (app != null) counts.getValue(app) else total)
+        val n = if (app != null) counts.getValue(app) else counts.values.sum()
+        val limit = if (app != null) p.limit(app) else p.totalLimit
+        f.show(Stats.mood(n, limit), n, p.mascotFor(app), Stats.heat(n, limit))
     }
 
     private fun line(): String {

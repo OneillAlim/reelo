@@ -6,16 +6,34 @@ Design prototype (screens, themes, mascots): https://claude.ai/artifact/Ckkk4Ghg
 
 ## Fitur
 - Hitung reels per app (AccessibilityService) + screen time, berapa kali dibuka, pemicu unlock (UsageStatsManager)
-- Beranda dengan odometer dan rol hari yang bisa digeser, empty state, colek maskot
-- Insight: grafik 7 hari, heatmap jam rawan, jempol meter, "setara dengan"
+- Beranda: odometer (ketuk buat muter ulang), rol hari yang bisa digeser, lampu marquee di lubang film,
+  tiket per app dengan maskotnya, papan skor, Tantangan hari ini, colek/tahan maskot (joget), konfeti
+- Insight: grafik 7 hari (batangnya bisa diketuk), heatmap jam rawan, jempol meter, "setara dengan"
 - Kendali: jatah per app (dalam reels), Jam Malam, Mode Tegas, Fokus 25 menit, counter "Satu Lagi"
 - Pause Card overlay dengan tombol tahan 2 detik, notifikasi pas jatah tinggal 20%
-- Maskot melayang di luar app: ketuk, ketuk 2x (ngumpet), tahan (menu), seret (nempel pinggir), buang (sembunyi), tidur kalau didiamkan
-- 4 maskot pixel (Reelo, Popi, Tiko, Telo) x 5 mood, kostum dari Rol Film, evolusi, streak + Freeze, 12 lencana
+- Maskot melayang di luar app: ketuk, ketuk 2x (ngumpet), tahan (menu + "Salah hitung? Coret 1"), seret (nempel pinggir),
+  buang (sembunyi), jalan-jalan sendiri kalau nganggur, lompat ke sisi seberang, tidur setelah 45 detik,
+  ganti karakter pas pindah app, badge angka kedip makin sering kalau makin dekat jatah
+- 4 maskot pixel (Reelo, Popi, Tiko, Telo) x 5 mood, tiap app punya maskot sendiri (default TikTok = Tiko,
+  Shorts = Telo, IG = Popi, bisa diganti di Pengaturan), kostum dari Rol Film, evolusi, streak + Freeze, 12 lencana
 - Recap 7 hari yang bisa dibagikan sebagai gambar, widget 2x2 dan 4x2
 - Tema Siang / Bioskop Malam / Ikut HP, otomatis gelap saat Jam Malam
 - Cek kesehatan (service, izin, optimasi baterai per merek), ekspor CSV, hapus data
 - Tanpa izin INTERNET. Semua data cuma ada di HP.
+
+## Lampu dan kedip
+Satu skala "panas" (`Stats.heat`) dipakai di Beranda, maskot melayang, dan tiket:
+
+| heat | kondisi | lampu marquee | badge maskot melayang |
+|---|---|---|---|
+| 0 | < 50% jatah | kuning, diam | merah, diam |
+| 1 | 50–79% | kuning, kelip acak | kedip pelan (900 ms) |
+| 2 | 80–100% | oranye, nyala selang-seling | kedip oranye (500 ms) |
+| 3 | lewat jatah | merah, selang-seling + angka berdenyut merah | kedip merah (400 ms) |
+
+Tiap nembus kelipatan 10 reels: lampu putih lari keliling rol dua putaran, angka kedip, maskot teriak (sekali per
+kelipatan per hari, dicatat di `Prefs.milestone`). Kedip paling cepat 2,5 kali per detik, biar aman buat yang sensitif
+cahaya. Semua animasi mati kalau **Kurangi animasi** nyala.
 
 ## Build
 Butuh Android SDK 37 dan JDK 17+ (JDK bawaan Android Studio cukup).

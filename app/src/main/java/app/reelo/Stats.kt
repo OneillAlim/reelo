@@ -39,6 +39,37 @@ object Days {
     fun hourOf(ts: Long) = Instant.ofEpochMilli(ts).atZone(zone).hour
 }
 
+/** Misi kecil harian. Dipilih dari tanggal, jadi semua orang dapat misi yang sama di hari yang sama. */
+enum class Challenge(val title: String, val hint: String) {
+    PAGI("Pagi tanpa reels", "Nggak scroll sebelum jam 10.00"),
+    SETENGAH("Setengah jatah", "Total hari ini maksimal separuh jatah"),
+    MALAM("Malam bersih", "Nol reels setelah jam 21.00"),
+    SATU_APP("Satu app aja", "Cuma buka reels di satu app"),
+    JEDA("Tanpa maraton", "Nggak ada sesi yang lebih dari 15 menit");
+
+    enum class State { ON, OK, FAIL }
+
+    /** OK = pasti lolos, ON = masih jalan, FAIL = gagal. [now] dipakai buat tahu harinya udah lewat jam batas atau belum. */
+    fun check(d: LocalDate, sw: List<Swipe>, limit: Int, now: Long): State {
+        val over = now >= Days.end(d)
+        fun at(h: Int) = d.atTime(h, 0).atZone(Days.zone).toInstant().toEpochMilli()
+        val fail = when (this) {
+            PAGI -> sw.any { it.ts < at(10) }
+            SETENGAH -> sw.size * 2 > limit
+            MALAM -> sw.any { it.ts >= at(21) }
+            SATU_APP -> sw.map { it.app }.distinct().size > 1
+            JEDA -> Stats.sessions(sw).any { it.binge }
+        }
+        return when {
+            fail -> State.FAIL
+            over || this == PAGI && now >= at(10) -> State.OK
+            else -> State.ON
+        }
+    }
+
+    companion object { const val ROL = 10; fun of(d: LocalDate) = entries[Math.floorMod(d.toEpochDay(), entries.size.toLong()).toInt()] }
+}
+
 object Stats {
     fun mood(count: Int, limit: Int): Mood {
         val r = count.toDouble() / limit.coerceAtLeast(1)
@@ -109,6 +140,9 @@ object Stats {
         val freezeLeft = if (Days.weekStart(today) in usedFreeze) 0 else 1
         return n to freezeLeft
     }
+
+    /** Seberapa "panas" hitungan: 0 di bawah 50%, 1 sampai 80%, 2 sampai jatah, 3 lewat jatah. Dipakai buat lampu dan kedip. */
+    fun heat(n: Int, limit: Int) = when { limit <= 0 -> if (n > 0) 3 else 0; n > limit -> 3; n * 5 >= limit * 4 -> 2; n * 2 >= limit -> 1; else -> 0 }
 
     fun stage(best: Int) = when { best >= 30 -> 2; best >= 14 -> 1; else -> 0 }
 }

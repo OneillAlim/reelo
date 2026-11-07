@@ -1,5 +1,8 @@
 package app.reelo.ui
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -88,10 +91,14 @@ fun Lemari() {
     val p = prefs()
     val pal = LocalPal.current
     val stage = Stats.stage(p.bestStreak)
+    var trying by remember { mutableStateOf<Acc?>(null) }
+    var confetti by remember { mutableIntStateOf(0) }
+    Box(Modifier.fillMaxSize()) {
     Screen {
         Top("Lemari") { Pill("${p.rol} Rol Film", pal.musInk) }
         Card(Modifier.fillMaxWidth()) {
-            Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) { MascotView(Mood.SEGAR, 6.dp) }
+            Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) { MascotView(Mood.SEGAR, 6.dp, acc = trying ?: p.acc) }
+            if (trying != null) Small("Lagi nyobain ${trying!!.label}. Kumpulin rol buat beli beneran.", Modifier.fillMaxWidth())
         }
         Small("Dapat 20 Rol Film tiap hari kamu di bawah jatah. Nggak bisa dibeli pakai uang.")
         Acc.entries.chunked(2).forEach { row ->
@@ -109,10 +116,12 @@ fun Lemari() {
                     }
                     Column(
                         Modifier.weight(1f).background(pal.card).border(2.dp, if (worn) pal.red else pal.line)
-                            .clickable(enabled = !locked, role = Role.Button) {
+                            .clickable(role = Role.Button) {
+                                trying = null
                                 when {
                                     owned -> p.acc = if (worn) null else a
-                                    p.rol >= a.price -> { p.rol -= a.price; p.own(a); p.acc = a; p.grant(Badge.GAYA) }
+                                    !locked && p.rol >= a.price -> { p.rol -= a.price; p.own(a); p.acc = a; p.grant(Badge.GAYA); confetti++ }
+                                    else -> trying = a // belum kebeli: cobain dulu di maskot besar
                                 }
                                 Live.bump()
                             }.padding(8.dp),
@@ -125,5 +134,7 @@ fun Lemari() {
                 }
             }
         }
+    }
+    Confetti(confetti)
     }
 }

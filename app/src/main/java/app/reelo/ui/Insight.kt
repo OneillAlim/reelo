@@ -13,6 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import app.reelo.LocalReduce
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -46,8 +52,22 @@ fun Detail(app: App, onBack: () -> Unit) {
     val sessions = Stats.sessions(sw)
     val spr = Stats.secondsPerReel(sw)
     val u = data.usage[app]
+    val p = prefs()
+    val m = p.mascotFor(app)
+    val limit = p.limit(app)
     Screen {
         Top(app.label, onBack) { Lbl("Hari ini") }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            MascotView(Stats.mood(sw.size, limit), 3.dp, mascot = m)
+            Bubble(
+                "${m.voice} " + when {
+                    sw.isEmpty() -> "Belum ada ${app.label} hari ini. Aku jagain."
+                    sw.size > limit -> "Udah lewat ${sw.size - limit} dari jatah. Udahan yuk."
+                    else -> "Jatah ${app.label} sisa ${limit - sw.size}."
+                },
+                Modifier.weight(1f),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Card(Modifier.weight(1f)) { Lbl("Reels"); Big("${sw.size}") }
             Card(Modifier.weight(1f)) { Lbl("Menit"); Big("${(u?.ms ?: 0) / 60_000}") }
@@ -99,6 +119,8 @@ fun Insight() {
     val limit = p.totalLimit
     val week = sw.size
     val weekMs = usage.values.sumOf { it.ms }
+    var pick by remember { mutableIntStateOf(6) }
+    val grow by androidx.compose.animation.core.animateFloatAsState(if (sw.isEmpty()) 0f else 1f, androidx.compose.animation.core.tween(if (LocalReduce.current) 0 else 600, easing = steps(6)), label = "grow")
 
     Screen {
         Top("Insight") { Pill("7 hari terakhir", pal.fg) }
@@ -106,11 +128,13 @@ fun Insight() {
             Row { Box(Modifier.weight(1f)) { Lbl("Reels per hari") }; Small("garis = jatah $limit") }
             val max = maxOf(limit * 1.2f, (totals.maxOrNull() ?: 0).toFloat(), 1f)
             Box(Modifier.fillMaxWidth().height(110.dp).padding(top = 6.dp)) {
-                Canvas(Modifier.fillMaxWidth().height(90.dp)) {
+                Canvas(Modifier.fillMaxWidth().height(90.dp).pointerInput(Unit) { detectTapGestures { o -> pick = (o.x / size.width * 7).toInt().coerceIn(0, 6) } }) {
                     val w = size.width / 7
                     totals.forEachIndexed { i, t ->
-                        val h = t / max * size.height
-                        drawRect(if (t > limit) pal.red else pal.teal, Offset(i * w + w * .15f, size.height - h), Size(w * .7f, h))
+                        val h = t / max * size.height * grow
+                        val c = if (t > limit) pal.red else pal.teal
+                        drawRect(if (i == pick) c else c.copy(alpha = .55f), Offset(i * w + w * .15f, size.height - h), Size(w * .7f, h))
+                        if (i == pick) drawRect(pal.fg, Offset(i * w + w * .15f, size.height - h - 4.dp.toPx()), Size(w * .7f, 2.dp.toPx()))
                     }
                     val ly = size.height - limit / max * size.height
                     drawLine(pal.red, Offset(0f, ly), Offset(size.width, ly), 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
@@ -124,6 +148,14 @@ fun Insight() {
                     }
                 }
             }
+            val d = days[pick]
+            val top = App.entries.maxByOrNull { a -> sw.count { it.app == a && Days.of(it.ts) == d } }
+            val topN = sw.count { it.app == top && Days.of(it.ts) == d }
+            Txt(
+                "${dayName(d, today)}: ${totals[pick]} reels" + if (topN > 0) " · paling banyak ${top!!.label} ($topN)" else "",
+                12.sp, bold = true, modifier = Modifier.padding(top = 4.dp),
+            )
+            Small("Ketuk batang buat lihat hari lain.")
         }
         Card {
             Lbl("Jam rawan")

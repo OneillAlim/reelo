@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
@@ -40,6 +41,7 @@ import androidx.core.content.ContextCompat
 import app.reelo.Db
 import app.reelo.Live
 import app.reelo.LocalPal
+import app.reelo.App
 import app.reelo.Mascot
 import app.reelo.Mood
 import app.reelo.PixelFont
@@ -108,12 +110,18 @@ fun SettingsScreen(onBack: () -> Unit, onTema: () -> Unit) {
         Card {
             SettingRow("Tema", when (p.theme) { ThemeMode.AUTO -> "Ikut HP"; ThemeMode.DAY -> "Siang"; ThemeMode.NIGHT -> "Bioskop Malam" }) { Px(">", 18.sp, modifier = Modifier.clickable(onClick = onTema)) }
             Lbl("Maskot")
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Mascot.entries.forEach { m ->
-                    Column(
-                        Modifier.weight(1f).border(2.dp, if (p.mascot == m) pal.red else pal.line).clickable(role = Role.RadioButton) { p.mascot = m; Live.bump() }.padding(4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) { MascotView(Mood.SEGAR, 2.dp, mascot = m); Txt(m.label, 11.sp, bold = p.mascot == m) }
+            Small("Tiap app punya penjaga sendiri. Maskot melayang ganti otomatis pas kamu pindah app.")
+            (listOf<App?>(null) + App.entries).forEach { app ->
+                val cur = p.mascotFor(app)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Txt(app?.label ?: "Utama", 12.sp, bold = true, modifier = Modifier.width(62.dp))
+                    Mascot.entries.forEach { m ->
+                        Column(
+                            Modifier.weight(1f).border(2.dp, if (cur == m) pal.red else pal.line)
+                                .clickable(role = Role.RadioButton, onClickLabel = "${m.label} buat ${app?.label ?: "maskot utama"}") { p.setMascotFor(app, m); Live.bump() }.padding(3.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) { MascotView(Mood.SEGAR, 1.5.dp, mascot = m); Txt(m.label, 10.sp, bold = cur == m) }
+                    }
                 }
             }
             SettingRow("Maskot melayang", "Muncul di home screen dan di atas app video") {

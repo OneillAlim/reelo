@@ -60,6 +60,7 @@ object Repo {
             val n = totals[d] ?: 0
             if (n == 0 && blind(ctx, d)) { p.markBlind(d); p.rewardedUntil = d.toString(); d = d.plusDays(1); continue }
             if (n <= p.totalLimit) p.rol += 20
+            if (Challenge.of(d).check(d, db.range(Days.start(d), Days.end(d)), p.totalLimit, System.currentTimeMillis()) == Challenge.State.OK) p.rol += Challenge.ROL
             if (d.isAfter(first)) {
                 if (n == 0) p.grant(Badge.JEMPOL_LIBUR)
                 if (n <= p.totalLimit / 2) p.grant(Badge.SETENGAH)

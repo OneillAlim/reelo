@@ -49,6 +49,9 @@ class Prefs private constructor(val sp: SharedPreferences) {
     var firstDay by str("")
     var themeName by str(ThemeMode.AUTO.name)
     var mascotName by str(Mascot.REELO.name)
+    var mascotTiktok by str(Mascot.TIKO.name)
+    var mascotShorts by str(Mascot.TELO.name)
+    var mascotIg by str(Mascot.POPI.name)
     var accName by str("")
     var owned by str("")
     var badgesStr by str("")
@@ -56,6 +59,10 @@ class Prefs private constructor(val sp: SharedPreferences) {
     var rewardedUntil by str("")
     var bestStreak by int(0)
     var blindStr by str("")
+    /** "tanggal|kelipatan 10 terakhir yang udah dirayain di Beranda", biar lampu lari cuma sekali per kelipatan. */
+    var milestone by str("")
+    /** Tanggal terakhir konfeti tantangan diputar. */
+    var cheered by str("")
     var limitTiktok by int(30)
     var limitShorts by int(20)
     var limitIg by int(10)
@@ -80,6 +87,9 @@ class Prefs private constructor(val sp: SharedPreferences) {
     var mascot: Mascot
         get() = Mascot.valueOf(mascotName)
         set(v) { mascotName = v.name }
+    /** Maskot yang nemenin di app itu. null = maskot utama (Beranda, home screen). */
+    fun mascotFor(app: App?): Mascot = Mascot.valueOf(when (app) { null -> mascotName; App.TIKTOK -> mascotTiktok; App.SHORTS -> mascotShorts; App.IG -> mascotIg })
+    fun setMascotFor(app: App?, m: Mascot) = when (app) { null -> mascotName = m.name; App.TIKTOK -> mascotTiktok = m.name; App.SHORTS -> mascotShorts = m.name; App.IG -> mascotIg = m.name }
     var acc: Acc?
         get() = accName.takeIf { it.isNotEmpty() }?.let { Acc.valueOf(it) }
         set(v) { accName = v?.name.orEmpty() }

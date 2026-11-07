@@ -167,7 +167,7 @@ fun shareRecap(ctx: Context, r: RecapData, m: Mascot) {
     val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
     c.drawColor(0xFF1A1220.toInt())
-    val px = ResourcesCompat.getFont(ctx, R.font.pixelify)
+    val px = ResourcesCompat.getFont(ctx, R.font.jersey)
     val body = ResourcesCompat.getFont(ctx, R.font.rubik)
     val fg = 0xFFF6E7C8.toInt()
     fun text(s: String, x: Float, y: Float, size: Float, color: Int = fg, face: android.graphics.Typeface? = body, right: Boolean = false) =

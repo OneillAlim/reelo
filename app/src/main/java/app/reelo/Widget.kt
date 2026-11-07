@@ -37,8 +37,10 @@ object Widgets {
             setImageViewBitmap(R.id.w_mascot, bmp)
             setTextViewText(R.id.w_count, "$total reels")
             val rows = listOf(Triple(R.id.w_t1, R.id.w_p1, App.TIKTOK), Triple(R.id.w_t2, R.id.w_p2, App.SHORTS), Triple(R.id.w_t3, R.id.w_p3, App.IG))
-            rows.forEach { (tv, pb, app) ->
+            val icons = listOf(R.id.w_m1, R.id.w_m2, R.id.w_m3)
+            rows.forEachIndexed { i, (tv, pb, app) ->
                 val n = sw.count { it.app == app }; val l = p.limit(app)
+                setImageViewBitmap(icons[i], Sprite.bitmap(p.mascotFor(app), Stats.mood(n, l), 2, p.acc))
                 setTextViewText(tv, "${app.label}  $n/$l")
                 setProgressBar(pb, l.coerceAtLeast(1), n.coerceAtMost(l), false)
             }

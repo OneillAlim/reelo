@@ -30,7 +30,7 @@ val Cream = Color(0xFFFFF6E6)
 val LocalPal = staticCompositionLocalOf { Day }
 val LocalReduce = staticCompositionLocalOf { false }
 
-val PixelFont = FontFamily(Font(R.font.pixelify, FontWeight.SemiBold))
+val PixelFont = FontFamily(Font(R.font.jersey, FontWeight.SemiBold))
 val BodyFont = FontFamily(Font(R.font.rubik, FontWeight.Normal), Font(R.font.rubik_semibold, FontWeight.SemiBold))
 
 fun wantNight(p: Prefs, sysDark: Boolean, hour: Int) =

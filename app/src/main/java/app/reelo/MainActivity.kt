@@ -8,6 +8,10 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -114,12 +118,20 @@ fun ReeloApp(act: ComponentActivity) {
                             Sub.RecapS -> Recap { sub = null }
                             Sub.SettingsS -> SettingsScreen({ sub = null }, { sub = Sub.TemaS })
                             Sub.TemaS -> Tema { sub = Sub.SettingsS }
-                            null -> when (tab) {
-                                0 -> Home({ sub = Sub.AppDetail(it) }, { sub = Sub.RecapS })
-                                1 -> Insight()
-                                2 -> Kendali()
-                                3 -> Lemari()
-                                else -> Saya({ sub = Sub.SettingsS }, { sub = Sub.RecapS })
+                            // pindah tab = geser satu frame film, arahnya ikut urutan tab
+                            null -> AnimatedContent(tab, transitionSpec = {
+                                val dir = if (targetState > initialState) 1 else -1
+                                val ms = if (p.reduceMotion) 0 else 260
+                                (slideInHorizontally(tween(ms, easing = steps(4))) { it * dir } togetherWith
+                                    slideOutHorizontally(tween(ms, easing = steps(4))) { -it * dir })
+                            }, label = "tab") { t ->
+                                when (t) {
+                                    0 -> Home({ sub = Sub.AppDetail(it) }, { sub = Sub.RecapS })
+                                    1 -> Insight()
+                                    2 -> Kendali()
+                                    3 -> Lemari()
+                                    else -> Saya({ sub = Sub.SettingsS }, { sub = Sub.RecapS })
+                                }
                             }
                         }
                     }

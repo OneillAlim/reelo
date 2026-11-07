@@ -6,8 +6,12 @@ import android.graphics.Paint
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
-enum class Mascot(val label: String, val kind: String) {
-    REELO("Reelo", "Gulungan film"), POPI("Popi", "Ember popcorn"), TIKO("Tiko", "Tiket bioskop"), TELO("Telo", "TV tabung")
+/** voice = gaya sapaan tiap karakter, dipakai pas maskot muncul di app. */
+enum class Mascot(val label: String, val kind: String, val voice: String) {
+    REELO("Reelo", "Gulungan film", "Rol jalan!"),
+    POPI("Popi", "Ember popcorn", "Kriuk!"),
+    TIKO("Tiko", "Tiket bioskop", "Cekrek, tiket dicek!"),
+    TELO("Telo", "TV tabung", "Kami kembali ke siaran!"),
 }
 
 enum class Acc(val label: String, val price: Int, val needStage: Int = 0) {

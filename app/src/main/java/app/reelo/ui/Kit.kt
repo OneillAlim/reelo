@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -132,14 +134,14 @@ fun Modifier.perforated(hole: Color, inset: Dp = 6.dp, h: Dp = 6.dp) = drawBehin
 }
 
 @Composable
-fun Film(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun Film(modifier: Modifier = Modifier, holes: (Modifier.() -> Modifier)? = null, content: @Composable ColumnScope.() -> Unit) {
     val p = LocalPal.current
     Column(
         modifier.fillMaxWidth().background(p.film, RoundedCornerShape(4.dp))
             .drawBehind {
                 if (p.night) drawRect(Brush.radialGradient(listOf(Color(0x42FFD68C), Color.Transparent), Offset(size.width / 2, -size.height * .25f), size.width * .9f))
             }
-            .perforated(p.hole).padding(horizontal = 14.dp, vertical = 20.dp),
+            .let { m -> holes?.invoke(m) ?: m.perforated(p.hole) }.padding(horizontal = 14.dp, vertical = 20.dp),
         content = content,
     )
 }
@@ -294,4 +296,110 @@ fun <T> load(vararg keys: Any?, initial: T, block: () -> T): T {
     var value by remember { androidx.compose.runtime.mutableStateOf(initial) }
     LaunchedEffect(*keys) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { block() } }
     return value
+}
+
+/** Jam animasi bersama: nilai ms yang naik tiap ~60 ms selama [on]. Mati total kalau Kurangi animasi nyala. */
+@Composable
+fun ticker(on: Boolean = true): Long {
+    val reduce = LocalReduce.current
+    var t by remember { mutableLongStateOf(0L) }
+    if (on && !reduce) LaunchedEffect(Unit) { while (true) { t = withFrameMillis { it }; delay(60) } }
+    return t
+}
+
+private val BULB_MS = longArrayOf(0, 450, 500, 400)
+
+fun bulbColor(p: app.reelo.Pal, heat: Int) = when (heat) { 3 -> p.red; 2 -> Color(0xFFFF8A3D); else -> p.mus }
+
+/**
+ * Lubang film jadi lampu bioskop. Kolom ke-i nyala kalau i < lit * jumlah kolom (lit 0..1 = progres ke jatah).
+ * Makin panas makin rame: 0 diam, 1 kelip acak, 2 nyala selang-seling, 3 merah selang-seling lebih cepat.
+ * Kecepatan kedip maksimal 2,5 kali per detik (aman buat yang sensitif cahaya).
+ * chase 0..1 = kepala lampu putih yang lari keliling pas nembus kelipatan 10; di luar itu isi -1.
+ */
+fun Modifier.marquee(p: app.reelo.Pal, lit: Float, heat: Int, t: Long, chase: Float, inset: Dp = 6.dp, h: Dp = 6.dp) = drawBehind {
+    val w = 7.dp.toPx(); val hh = h.toPx(); val e = inset.toPx()
+    val cols = ((size.width - 2 * e + w) / (w * 2)).toInt().coerceAtLeast(1)
+    val on = (lit.coerceIn(0f, 1f) * cols).roundToInt()
+    val base = bulbColor(p, heat)
+    val per = BULB_MS[heat.coerceIn(0, 3)]
+    val head = if (chase >= 0f) chase * cols * 4 else -99f // dua putaran keliling (atas lalu bawah balik)
+    for (row in 0..1) for (i in 0 until cols) {
+        val x = e + i * w * 2; val y = if (row == 0) e else size.height - e - hh
+        var c = if (i < on) base else p.hole
+        if (i < on && per > 0) {
+            val k = t / per
+            val dim = when (heat) { 1 -> (i * 7 + row * 3 + k) % 5 == 0L; else -> (i + row + k) % 2 == 0L }
+            if (dim) c = base.copy(alpha = .35f)
+        }
+        val pos = if (row == 0) i.toFloat() else (2 * cols - 1 - i).toFloat()
+        val d = ((head - pos) % (2 * cols) + 2 * cols) % (2 * cols)
+        if (head > -99f && d < 3f) c = Cream.copy(alpha = 1f - d / 4f)
+        drawRect(c, Offset(x, y), Size(w, hh))
+        if (p.night && c != p.hole) drawRect(c.copy(alpha = .25f), Offset(x - 2.dp.toPx(), y - 2.dp.toPx()), Size(w + 4.dp.toPx(), hh + 4.dp.toPx()))
+    }
+}
+
+/** Hujan kotak pixel 1,4 detik tiap [key] berubah (selain 0). Nggak nangkep sentuhan. */
+@Composable
+fun Confetti(key: Int, modifier: Modifier = Modifier) {
+    val p = LocalPal.current
+    if (key == 0 || LocalReduce.current) return
+    val f = remember(key) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(key) { f.animateTo(1f, tween(1400, easing = steps(28))) }
+    val bits = remember(key) {
+        val r = java.util.Random(key.toLong())
+        List(44) { floatArrayOf(r.nextFloat(), r.nextFloat() * .35f, (r.nextFloat() - .5f) * .3f, .6f + r.nextFloat() * .8f, r.nextInt(4).toFloat()) }
+    }
+    val cols = listOf(p.mus, p.red, p.teal, Cream)
+    if (f.value < 1f) Canvas(modifier.fillMaxSize()) {
+        val s = 6.dp.toPx(); val v = f.value
+        bits.forEach { (x0, y0, vx, g, ci) ->
+            val x = (x0 + vx * v) * size.width
+            val y = (y0 - .3f + g * v * v * 1.6f) * size.height
+            drawRect(cols[ci.toInt()].copy(alpha = 1f - v * .6f), Offset(x, y), Size(s, s))
+        }
+    }
+}
+
+val GLYPHS = mapOf(
+    "jam" to listOf("..###..", ".#...#.", "#..#..#", "#..##.#", "#.....#", ".#...#.", "..###.."),
+    "jempol" to listOf("...##..", "...##..", "..###..", "######.", "######.", "######.", ".#####."),
+    "piala" to listOf("#######", "#.###.#", ".#####.", "..###..", "...#...", "..###..", ".#####."),
+)
+
+/** Tiket bioskop per app: sobekan kiri isi maskot app itu, kanan angka dan bar jatah. */
+@Composable
+fun Ticket(label: String, n: Int, limit: Int, mascot: Mascot, tint: Color, onClick: () -> Unit) {
+    val p = LocalPal.current
+    val heat = app.reelo.Stats.heat(n, limit)
+    val stub = 70.dp
+    Row(
+        Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)
+            .background(p.card).border(2.dp, p.line)
+            .clickable(role = Role.Button, onClickLabel = "Detail $label", onClick = onClick)
+            .drawWithContent {
+                drawContent()
+                val x = stub.toPx(); val r = 7.dp.toPx()
+                drawCircle(p.bg, r, Offset(x, 0f)); drawCircle(p.bg, r, Offset(x, size.height))
+                var y = r * 1.6f
+                while (y < size.height - r * 1.6f) { drawRect(p.line, Offset(x - 1.dp.toPx(), y), Size(2.dp.toPx(), 5.dp.toPx())); y += 9.dp.toPx() }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(stub).fillMaxHeight().background(tint.copy(alpha = .14f)).padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+            MascotView(app.reelo.Stats.mood(n, limit), 1.8.dp, mascot = mascot)
+        }
+        Column(Modifier.weight(1f).padding(start = 14.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) { Lbl(mascot.label + " jaga"); Txt(label, 14.sp, bold = true) }
+                Px("$n", 26.sp, if (heat >= 2) bulbColor(p, heat) else p.fg)
+                Px(" /$limit", 14.sp, p.muted, Modifier.padding(bottom = 3.dp))
+            }
+            val fill = if (limit <= 0) 10 else (n * 10f / limit).roundToInt().coerceIn(0, 10)
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                repeat(10) { i -> Box(Modifier.weight(1f).height(6.dp).background(if (i < fill) bulbColor(p, heat) else p.line)) }
+            }
+        }
+    }
 }

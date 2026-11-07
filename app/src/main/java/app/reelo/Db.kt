@@ -41,6 +41,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "reelo.db", n
         range(0, Long.MAX_VALUE).forEach { appendLine("${it.app.label},${java.time.Instant.ofEpochMilli(it.ts)}") }
     }
 
+    /** Coret satu hitungan terakhir app itu sejak [since]. Buat tombol "salah hitung". */
+    fun removeLast(app: App, since: Long): Boolean =
+        writableDatabase.delete("swipe", "id = (SELECT MAX(id) FROM swipe WHERE app = ? AND ts >= ?)", arrayOf(app.name, "$since")) > 0
+
     fun clear() { writableDatabase.delete("swipe", null, null) }
 
     companion object {
