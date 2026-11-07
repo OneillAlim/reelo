@@ -3,6 +3,34 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-07 · Jaga Api: kirim 👉 ke semua dites di HP, grup chat dibenerin
+
+**Hasil di HP Bryan.** 23 dari 24 teman berapi dapat 👉, termasuk grup chat. Kecepatan mode sapu sekitar **3 detik per
+teman** (7 teman dalam 20 detik). Satu teman tercatat "Pesan nggak kelihatan terkirim"; mungkin cuma cek-nya yang
+gagal, jadi perlu dicek manual di chat.
+
+**Bug yang ketemu dan dibenerin.**
+- **Grup chat bikin robot nyangkut.** Di grup, tiap pesan nampilin nama pengirim pakai id yang sama (`user_name`),
+  jadi layar grup kebaca kayak Inbox. Robot nggak balik, terus "mentok" di daftar pesan grup. Sekarang
+  `TikTokBot.isInbox()` ngecek ada tab bawah "Inbox" (`TikTokUi.isTab`) **dan** ada nama chat. Dipakai di `inbox()`,
+  `backTo()`, dan tiap putaran `sweep`.
+- **Inbox dibaca pas masih transisi** abis balik dari chat, jadi dianggap kosong dan berhenti. Sekarang nunggu sampai
+  Inbox + daftarnya kegambar (maks 3 detik), baru dibaca.
+- **Scroll ditolak sekali langsung dianggap habis.** Sekarang dicoba 3x, pakai `SCROLL_FORWARD` lalu `SCROLL_DOWN`.
+- **Tombol kirim kadang nggak muncul.** Cadangannya: kolom diklik + fokus + isi ulang, terus `ACTION_IME_ENTER`
+  (Android 11+).
+- **Cek terkirim terlalu ketat buat emoji.** Sekarang dianggap kekirim kalau pesannya muncul **atau** kolom ketiknya
+  kosong lagi setelah tombol kirim dipencet.
+- **Kirim manual ngelewatin semua orang** kalau hari itu udah dikirimin pesan lain. Sekarang "Kirim sekarang" cuma
+  ngelewatin yang udah dapat **pesan yang sama** hari ini (`Db.sentOkWith`). Run otomatis tetap maksimal sekali sehari.
+  Kartu konfirmasi nampilin jumlah yang bakal dikirim + yang dilewati.
+- **Lebih cepat:**
+  - sapuan berhenti setelah 2 halaman tanpa api (chat streak selalu ngumpul di atas);
+  - putaran kedua cuma jalan kalau masih ada yang kelewat.
+
+  (Perbaikan ini belum diukur ulang, biar nggak ngirim dobel.)
+- **Log debug** `ReeloBot` per halaman: `rows / streak / target / handled`, buat ngecek kalau ada yang kelewat.
+
 ## 2026-11-07 · Jaga Api mode sapu: cepat, langsung ke semua yang ngestreak
 
 **Kenapa.** Kirim pertama Bryan jalan (22/22 terkirim) tapi makan 2 menit 43 detik, sekitar 7 detik per orang, karena

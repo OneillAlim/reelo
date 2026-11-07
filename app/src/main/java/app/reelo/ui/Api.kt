@@ -58,6 +58,7 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
     val friends = load(v, initial = emptyList<Friend>()) { db.friends() }
     val msgs = load(v, initial = emptyList<Msg>()) { db.msgs() }
     val log = load(v, initial = emptyList<Db.Sent>()) { db.history(60) }
+    val sentToday = load(v, initial = emptySet<String>()) { db.sentOkWith(Flame.day(System.currentTimeMillis()), db.msgs().filter { it.on }.map { it.id }) }
     val live = friends.filter { it.streak > 0 }
     val picked = (if (p.flameAll) live else live.filter { it.on }).take(Flame.MAX_FRIENDS)
     val activeMsgs = msgs.count { it.on }
@@ -142,8 +143,10 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
         }
         confirm?.let { who ->
             Card {
-                Txt(if (who.isEmpty()) "Kirim ke ${picked.size} teman sekarang?" else "Kirim 1 pesan ke $who sekarang?", bold = true)
-                Small("Layar dipinjam sebentar buat buka TikTok, nanti balik sendiri. Teman yang udah kebagian hari ini dilewati.")
+                val already = if (who.isEmpty()) picked.count { it.name in sentToday } else if (who in sentToday) 1 else 0
+                Txt(if (who.isEmpty()) "Kirim ke ${picked.size - already} teman sekarang?" else "Kirim 1 pesan ke $who sekarang?", bold = true)
+                Small("Layar dipinjam sebentar buat buka TikTok, nanti balik sendiri." +
+                    if (already > 0) " $already udah dapat pesan yang sama hari ini, dilewati." else "")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Btn("Batal", Modifier.weight(1f), ghost = true) { confirm = null }
                     Btn("Kirim", Modifier.weight(1f)) { confirm = null; run(who.ifEmpty { null }) }

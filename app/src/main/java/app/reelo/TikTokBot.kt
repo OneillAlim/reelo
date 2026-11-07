@@ -27,6 +27,7 @@ object TikTokUi {
     fun pkg(ctx: Context) = PKGS.firstOrNull { ctx.packageManager.getLaunchIntentForPackage(it) != null }
     fun isName(n: AccessibilityNodeInfo) = n.viewIdResourceName?.endsWith(":id/user_name") == true
     fun isSub(n: AccessibilityNodeInfo) = n.viewIdResourceName?.endsWith(":id/mux") == true
+    fun isTab(n: AccessibilityNodeInfo) = n.contentDescription?.toString() in INBOX && n.isVisibleToUser
 }
 
 /**
@@ -70,26 +71,48 @@ class TikTokBot(private val svc: AccessibilityService) {
             try {
                 val pkg = TikTokUi.pkg(svc)
                 if (pkg == null || !open(pkg) || !inbox()) { log("sweep: inbox gagal"); return@launch }
-                toTop()
-                val handled = HashSet<String>(); val seen = HashSet<String>()
-                var idle = 0; var pages = 0
-                while (idle < 2 && pages < 40) {
-                    val r = root() ?: break
-                    val rs = rows(r)
-                    seen += rs.map { it.name }
-                    val next = rs.firstOrNull { it.streak > 0 && it.name !in handled && want(it.name) }
-                    if (next != null) {
-                        handled += next.name
-                        val m = pick(next.name, next.streak) ?: continue
-                        progress(handled.size - 1, maxOf(total, handled.size), next.name)
-                        each(next.name, next.streak, m.first, chat(next.node, m.second))
-                        continue
+                val handled = HashSet<String>()
+                var pages = 0
+                // dua putaran: yang kedua dari atas lagi buat yang kelewat (chat yang naik/turun pas lagi dikirim)
+                for (pass in 0..1) {
+                    toTop()
+                    val seen = HashSet<String>()
+                    var idle = 0; var lost = 0; var sentThisPass = 0; var cold = 0
+                    while (idle < 2 && pages < 60) {
+                        // abis balik dari chat, Inbox kadang belum kegambar: tunggu dulu, jangan langsung dianggap habis
+                        val r = waitFor(3_000) { r -> r.takeIf { isInbox(it) && list(it) != null } }
+                        if (r == null) { if (++lost > 2 || !inbox()) break; continue }
+                        lost = 0
+                        val rs = rows(r)
+                        seen += rs.map { it.name }
+                        val next = rs.firstOrNull { it.streak > 0 && it.name !in handled && want(it.name) }
+                        if (next == null) log("sweep page=$pages rows=${rs.size} streak=${rs.count { it.streak > 0 }} target=${rs.count { it.streak > 0 && want(it.name) }} handled=${rs.count { it.name in handled }}")
+                        if (next != null) {
+                            handled += next.name; sentThisPass++
+                            val m = pick(next.name, next.streak) ?: continue
+                            progress(handled.size - 1, maxOf(total, handled.size), next.name)
+                            val note = chat(next.node, m.second)
+                            log("sweep #${handled.size} ${if (note == null) "ok" else note}")
+                            each(next.name, next.streak, m.first, note)
+                            continue
+                        }
+                        // chat streak diobrolin tiap hari jadi selalu ngumpul di atas Inbox: 2 halaman tanpa api = udahan
+                        cold = if (rs.any { it.streak > 0 }) 0 else cold + 1
+                        if (cold >= 2) { log("sweep: 2 halaman tanpa api, berhenti (putaran ${pass + 1})"); break }
+                        val before = seen.size
+                        // scroll kadang ditolak pas list baru selesai animasi: coba sampai 3x sebelum dianggap mentok
+                        var moved = false
+                        for (t in 0 until 3) { if (scrollDown(root() ?: r)) { moved = true; break }; delay(500) }
+                        if (!moved) {
+                            val l = root()?.let(::list)
+                            log("sweep: mentok bawah (putaran ${pass + 1}) list=${l != null} scrollable=${l?.isScrollable} actions=${l?.actionList?.map { it.id }}")
+                            break
+                        }
+                        delay(350); pages++
+                        root()?.let { rows(it).forEach { row -> seen += row.name } }
+                        idle = if (seen.size == before) idle + 1 else 0
                     }
-                    val before = seen.size
-                    if (list(r)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) != true) break
-                    delay(350); pages++
-                    root()?.let { rows(it).forEach { row -> seen += row.name } }
-                    idle = if (seen.size == before) idle + 1 else 0
+                    if (pass == 1 || sentThisPass == 0 || handled.size >= total) break
                 }
                 log("sweep: ${handled.size} dikirim, $pages halaman")
                 progress(handled.size, maxOf(total, handled.size), "")
@@ -131,15 +154,21 @@ class TikTokBot(private val svc: AccessibilityService) {
     /** Ke tab Inbox. Kalau lagi di layar lain (chat, video), mundur dulu. */
     private suspend fun inbox(): Boolean {
         repeat(4) {
-            if (root()?.all()?.any(TikTokUi::isName) == true && root()?.all()?.any { it.contentDescription?.toString() in TikTokUi.INBOX } == true) return true
+            if (root()?.let(::isInbox) == true) return true
             val tab = waitFor(3_000) { r -> r.all().firstOrNull { it.contentDescription?.toString() in TikTokUi.INBOX } }
             log("inbox try=$it tab=${tab != null} nodes=${root()?.all()?.size}")
             if (tab == null) { svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK); delay(700); return@repeat }
             log("click tab=${click(tab)}")
-            if (waitFor(5_000) { r -> r.all().firstOrNull(TikTokUi::isName) } != null) return true
+            if (waitFor(5_000) { r -> r.takeIf(::isInbox) } != null) return true
         }
         return false
     }
+
+    /**
+     * Beneran lagi di daftar Inbox: ada tab bawah "Inbox" dan ada nama chat. Cuma ngecek nama nggak cukup, karena di
+     * grup chat tiap pesan nampilin nama pengirim pakai id yang sama (user_name), jadi grup chat kebaca kayak Inbox.
+     */
+    private fun isInbox(r: AccessibilityNodeInfo): Boolean { val all = r.all(); return all.any(TikTokUi::isTab) && all.any(TikTokUi::isName) }
 
     private class Row(val name: String, val streak: Int, val restore: Int, val node: AccessibilityNodeInfo)
 
@@ -180,6 +209,13 @@ class TikTokBot(private val svc: AccessibilityService) {
         return found.values.filter { it.streak > 0 || it.restoreDays > 0 }
     }
 
+    /** Scroll daftar Inbox ke bawah. RecyclerView TikTok kadang nolak SCROLL_FORWARD tapi nerima SCROLL_DOWN. */
+    private fun scrollDown(r: AccessibilityNodeInfo): Boolean {
+        val l = list(r) ?: return false
+        return l.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ||
+            l.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id)
+    }
+
     private suspend fun toTop() {
         repeat(12) { if (root()?.let(::list)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) != true) return; delay(400) }
     }
@@ -190,19 +226,32 @@ class TikTokBot(private val svc: AccessibilityService) {
         val input = waitFor(6_000) { r -> r.all().firstOrNull { it.isEditable } } ?: return backTo("Kolom pesan nggak muncul")
         // tanpa ACTION_FOCUS biar keyboard nggak kebuka (balik ke Inbox cukup sekali BACK)
         input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) })
-        val send = waitFor(3_000) { r -> r.all().firstOrNull { it.contentDescription?.toString() in TikTokUi.SEND && it.isVisibleToUser } }
-            ?: return backTo("Tombol kirim nggak ketemu")
-        click(send)
-        val ok = waitFor(3_000) { r -> r.all().firstOrNull { !it.isEditable && it.text?.toString()?.trim() == text.trim() } } != null
-        return backTo(if (ok) null else "Pesan nggak kelihatan terkirim")
+        var send = waitFor(2_000) { r -> r.all().firstOrNull { it.contentDescription?.toString() in TikTokUi.SEND && it.isVisibleToUser } }
+        if (send == null) {
+            // cadangan: kolom diaktifin dulu, isi ulang. Ada chat yang baru nampilin tombol kirim setelah kolomnya fokus.
+            val again = root()?.all()?.firstOrNull { it.isEditable } ?: input
+            again.performAction(AccessibilityNodeInfo.ACTION_CLICK); again.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            again.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) })
+            send = waitFor(2_000) { r -> r.all().firstOrNull { it.contentDescription?.toString() in TikTokUi.SEND && it.isVisibleToUser } }
+            if (send == null && android.os.Build.VERSION.SDK_INT >= 30) {
+                log("chat: kirim lewat Enter")
+                again.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+            }
+        }
+        if (send != null) click(send)
+        // kekirim kalau pesannya muncul di chat, atau kolom ketiknya kosong lagi (emoji kadang beda kode pas ditampilin)
+        val ok = waitFor(3_000) { r -> r.all().firstOrNull { n ->
+            (!n.isEditable && n.text?.toString()?.trim() == text.trim()) || (n.isEditable && n.text?.toString()?.trim().let { it.isNullOrEmpty() || it != text.trim() && !it.contains(text.trim()) } && send != null)
+        } } != null
+        return backTo(when { ok -> null; send == null -> "Tombol kirim nggak ketemu"; else -> "Pesan nggak kelihatan terkirim" })
     }
 
     /** Mundur sampai balik ke Inbox (keyboard dulu, lalu chat). */
     private suspend fun backTo(note: String?): String? {
-        repeat(3) {
-            if (root()?.all()?.any(TikTokUi::isName) == true) return note
+        repeat(4) {
+            if (root()?.let(::isInbox) == true) return note
             svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            if (waitFor(1_500) { r -> r.all().firstOrNull(TikTokUi::isName) } != null) return note
+            if (waitFor(1_500) { r -> r.takeIf(::isInbox) } != null) return note
         }
         return note
     }

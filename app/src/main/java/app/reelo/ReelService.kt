@@ -205,8 +205,10 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
      * Siapa yang mau dikirimin: mode "semua yang ngestreak" = tiap baris Inbox yang ada apinya (termasuk api baru),
      * selain itu cuma yang dicentang. Yang udah kebagian hari ini selalu dilewati. [only] = Tes 1 teman.
      */
-    private fun flameWant(only: String?): Pair<(String) -> Boolean, Int> {
-        val done = db.sentOk(Flame.day(System.currentTimeMillis()))
+    private fun flameWant(only: String?, again: Boolean = false): Pair<(String) -> Boolean, Int> {
+        val day = Flame.day(System.currentTimeMillis())
+        // otomatis: maksimal sekali sehari. Manual: lewati cuma yang udah dapat pesan yang sama hari ini.
+        val done = if (again) db.sentOkWith(day, db.msgs().filter { it.on }.map { it.id }) else db.sentOk(day)
         val friends = db.friends().filter { it.streak > 0 }
         val picked = friends.filter { it.on }.map { it.name }.toSet()
         val all = p.flameAll && only == null
@@ -238,17 +240,20 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         }
     }
 
-    /** Dari layar Jaga Api: kirim sekarang (semua) atau tes ke satu teman. -1 = lagi jalan, 0 = nggak ada pesan aktif. */
+    /**
+     * Dari layar Jaga Api: kirim sekarang (semua) atau tes ke satu teman. Ini kamu yang minta, jadi teman yang udah
+     * kebagian hari ini tetap dikirimin lagi (layar udah nanya dulu). -1 = lagi jalan, 0 = nggak ada pesan aktif.
+     */
     fun flameNow(only: String? = null): Int {
         if (bot.running) return -1
         if (!hasMsg()) return 0
-        flameRun(only)
+        flameRun(only, again = true)
         return 1
     }
 
-    private fun flameRun(only: String?) {
+    private fun flameRun(only: String?, again: Boolean = false) {
         val today = Flame.day(System.currentTimeMillis())
-        val (want, est) = flameWant(only)
+        val (want, est) = flameWant(only, again)
         val msgs = db.msgs(); val rnd = java.util.Random()
         float?.hide()
         val card = flameCard ?: FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() }).also { flameCard = it }

@@ -68,6 +68,14 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "reelo.db", n
         buildSet { while (c.moveToNext()) add(c.getString(0)) }
     }
 
+    /** Teman yang hari itu udah kebagian salah satu pesan [ids] (buat kirim manual: jangan dobel pesan yang sama). */
+    fun sentOkWith(day: LocalDate, ids: Collection<Long>): Set<String> {
+        if (ids.isEmpty()) return emptySet()
+        return readableDatabase.rawQuery("SELECT name FROM sent WHERE day = ? AND ok = 1 AND msg IN (${ids.joinToString(",")})", arrayOf(day.toString())).use { c ->
+            buildSet { while (c.moveToNext()) add(c.getString(0)) }
+        }
+    }
+
     /** id pesan terakhir yang sukses ke teman ini, biar besok nggak sama. */
     fun lastMsg(name: String): Long? = readableDatabase.rawQuery("SELECT msg FROM sent WHERE name = ? AND ok = 1 ORDER BY ts DESC LIMIT 1", arrayOf(name)).use { c ->
         if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null
