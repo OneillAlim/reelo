@@ -19,6 +19,9 @@ Design prototype (screens, themes, mascots): https://claude.ai/artifact/Ckkk4Ghg
 - Recap 7 hari yang bisa dibagikan sebagai gambar
 - Widget 2x2, 4x2, dan papan marquee 4x1: latar pixel (Langit yang ikut jam, Bioskop, Tiket; ketuk ◆ buat ganti),
   maskot goyang + bintang/bohlam kelip lewat ViewFlipper, makin dekat jatah makin heboh
+- Jaga Api TikTok: kirim pesan otomatis ke teman yang udah punya streak, tiap 00.00 (atau pas HP pertama dibuka).
+  Pesan buatan sendiri diacak per teman, ada hitung mundur 5 detik + Tunda, dan riwayat. Selector TikTok ada di
+  `TikTokUi` (`TikTokBot.kt`). Melanggar aturan otomasi TikTok, jadi pakai dengan risiko sendiri.
 - Tema Siang / Bioskop Malam / Ikut HP, otomatis gelap saat Jam Malam
 - Cek kesehatan (service, izin, optimasi baterai per merek), ekspor CSV, hapus data
 - Tanpa izin INTERNET. Semua data cuma ada di HP. Teks di layar reel (nama akun, caption) cuma dipakai buat sidik jari

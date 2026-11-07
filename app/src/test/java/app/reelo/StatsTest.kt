@@ -128,6 +128,37 @@ class StatsTest {
         assertTrue(Bob.lift(0, 3, 1) != Bob.lift(0, 3, 0)) // digit kedua telat seperempat gelombang
     }
 
+    @Test fun flameParsing() {
+        assertEquals("Zeta", Flame.cleanName("\u200EZeta "))
+        assertEquals(677, Flame.parseStreak("677"))
+        assertEquals(null, Flame.parseStreak("Sent yesterday"))
+        assertEquals(553, Flame.restoreDays("{s_fireIcon}Restore your 553-day Streak"))
+        assertEquals(0, Flame.restoreDays("shared a video"))
+        assertEquals("api aman ya Zeta, hari ke-678", Flame.fill("api aman ya {nama}, hari ke-{hari}", "Zeta", 677))
+        assertEquals(null, Flame.invalid("api aman 🔥"))
+        assertTrue(Flame.invalid("cek https://x.co") != null)
+        assertTrue(Flame.invalid("   ") != null)
+        assertTrue(Flame.invalid("a".repeat(201)) != null)
+    }
+
+    @Test fun flamePickAvoidsYesterday() {
+        val msgs = listOf(Msg(1, "a", true), Msg(2, "b", true), Msg(3, "c", false))
+        val r = java.util.Random(7)
+        repeat(50) { assertEquals(2L, Flame.pick(msgs, 1, r)!!.id) }
+        assertEquals(1L, Flame.pick(listOf(Msg(1, "a", true)), 1, r)!!.id)
+        assertEquals(null, Flame.pick(listOf(Msg(3, "c", false)), null, r))
+    }
+
+    @Test fun flameDayStartsAtMidnight() {
+        val beforeMidnight = at("2026-11-07", 23, 59)
+        val afterMidnight = at("2026-11-08", 0, 1)
+        assertEquals(LocalDate.parse("2026-11-07"), Flame.day(beforeMidnight))
+        assertEquals(LocalDate.parse("2026-11-08"), Flame.day(afterMidnight))
+        assertFalse(Flame.due("2026-11-07", beforeMidnight))
+        assertTrue(Flame.due("2026-11-07", afterMidnight))
+        assertEquals(60_000L, Flame.untilMidnight(beforeMidnight))
+    }
+
     @Test fun thumbMeters() {
         assertEquals("6 m", Stats.formatMeters(Stats.meters(42)))
         assertEquals("1,5 km", Stats.formatMeters(Stats.meters(10_000)))

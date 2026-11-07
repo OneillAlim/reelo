@@ -3,6 +3,65 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-07 · Jaga Api: nyalain streak TikTok otomatis (kode jadi, belum dites di HP)
+
+> Status: build + unit test hijau. **Pindai dan kirim belum dicoba di HP** (HP lagi terkunci). Cara ngetes ada di bawah.
+
+**Apa.** Reelo bisa ngirim pesan ke teman TikTok yang udah punya streak, otomatis mulai jam 00.00. Kalau jam segitu
+HP terkunci, Jaga Api jalan pas HP pertama kali dibuka setelahnya. Pesannya buatan sendiri dan diacak per teman.
+
+**Batasan yang ditulis jujur di app** (kartu peringatan muncul pas pertama kali dinyalain):
+- melanggar aturan TikTok soal otomasi, jadi akun bisa dibatasi;
+- streak dua arah, Reelo cuma ngisi sisi kamu;
+- HP terkunci nggak bisa dibuka app;
+- cuma ke teman yang dicentang, maksimal 1 pesan per teman per hari (`Db.sentOk`), maksimal 40 teman
+  (`Flame.MAX_FRIENDS`), pesan tanpa link (`Flame.invalid`);
+- nggak ada trik buat nyamar jadi manusia.
+
+**File baru.**
+- `Flame.kt`: logika murni (`cleanName`, `parseStreak`, `restoreDays`, `fill` {nama}/{hari}, `pick` yang
+  menghindari pesan kemarin, `invalid`, hari api ganti jam **00.00** lewat `Flame.day`, `untilMidnight`). Data class
+  `Friend`, `Msg`.
+- `TikTokBot.kt`: robot berbasis coroutine Main.
+  - `scan()`: buka TikTok, tab Inbox, baca baris, scroll sampai nggak ada nama baru.
+  - `send()`: per teman: cari baris, buka chat, `ACTION_SET_TEXT` ke `EditText`, klik tombol desc `Send`/`Kirim`,
+    cek pesannya muncul, `BACK`.
+  - Selesai/batal: buka lagi app sebelumnya, kalau nggak ada ke HOME.
+  - Semua penanda layar ada di `object TikTokUi`, disurvei di TikTok 47.6.3:
+    - `user_name` = nama;
+    - `mux` = status (api padam = "Restore your N-day Streak");
+    - angka api = TextView angka di kanan nama;
+    - badge belum dibaca = `View`, bukan `TextView`, jadi nggak ketuker.
+- `ui/Api.kt`: layar Jaga Api (status + toggle + Tes 1 teman + Kirim sekarang), Teman (pindai, centang, pilih semua,
+  cari, api padam dipisah), Pesan (tulis/ubah/hapus/centang, sisipan {nama} {hari} 🔥, contoh acak), Riwayat
+  (per hari ✓/✕ + alasan).
+- `FlameCard` (di `Overlay.kt`): kartu atas layar, hitung mundur 5 detik (Tunda 1 jam / Mulai), lalu progres per
+  teman + Batal.
+
+**Perubahan.**
+- `Db` versi 2 (`onUpgrade` cuma nambah tabel `friend`, `msg`, `sent`; tabel `swipe` aman). Upsert ditulis
+  `INSERT OR IGNORE` + `UPDATE` karena minSdk 28. "Hapus semua data" ikut ngosongin tabel baru.
+- `Prefs`: `flameOn`, `flameWarned`, `flameSnoozeUntil`, `flameLastRun`, `flameScanTs`.
+- `ReelService`:
+  - timer `Handler` ke 00.00 (`armMidnight`) + receiver `USER_PRESENT`, dua-duanya manggil `flameMaybe()`;
+  - `flameMaybe()` jalan kalau: nyala, belum jalan hari ini, nggak ditunda, HP kebuka (`KeyguardManager`), nggak lagi
+    telepon (`AudioManager`), dan ada yang perlu dikirim;
+  - selama robot jalan: hitungan reels, Pause Card, Jam Malam, Mode Tegas, dan maskot melayang dimatiin;
+  - `ReelService.inst` dipakai layar buat manggil `flameScan` / `flameNow`;
+  - notifikasi hasil (`NOTIF_FLAME`).
+- Pintu masuk: kartu "Jaga Api TikTok" di Beranda (di bawah Tantangan) dan di Kendali.
+
+**Tes.** `StatsTest.flameParsing`, `flamePickAvoidsYesterday`, `flameDayStartsAtMidnight`.
+
+**Cara ngetes di HP (belum dilakukan).**
+1. Kendali > Jaga Api > Teman > Pindai. Hasilnya harus sama dengan Inbox: api nyala + angka, api padam dipisah.
+2. Pesan: tambah 1–2 pesan.
+3. **Tes 1 teman** ke teman yang setuju dikirimin pesan tes. Ini kirim beneran. Cek di chat, dan cek Riwayat.
+4. Build debug punya tombol "debug: hitung mundur sekarang" buat ngetes kartu hitung mundur tanpa nunggu 00.00.
+5. Kunci HP, buka lagi setelah 00.00, terus pastiin hitung mundur muncul.
+6. Kalau gagal "Kolom pesan nggak muncul" / "Tombol kirim nggak ketemu": layar chat TikTok beda dari asumsi. Dump layar
+   chat lalu sesuaikan `TikTokUi.SEND` atau cara cari `EditText` di `TikTokBot.sendOne`.
+
 ## 2026-11-07 · Widget baru: latar pixel, gerak, 3 gaya, papan marquee
 
 **Kenapa.** Bryan nggak suka widget lama (kotak krem polos, font nggak pixel). Dia minta ada latar, bisa gerak lucu,

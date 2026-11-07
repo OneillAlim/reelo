@@ -460,3 +460,87 @@ class PauseCard(
         onClose()
     }
 }
+
+/**
+ * Kartu kecil Jaga Api di atas layar: hitung mundur sebelum mulai, lalu progres per teman.
+ * Cuma kartunya yang nangkep sentuhan; sisa layar tetap bisa dipakai.
+ */
+class FlameCard(private val ctx: Context, night: Boolean, private val onClose: () -> Unit) {
+    private val wm = ctx.getSystemService(WindowManager::class.java)
+    private val fg = if (night) 0xFFF3E9DC.toInt() else 0xFF2B2118.toInt()
+    private val card = if (night) 0xFF1D1823.toInt() else 0xFFFFF8EC.toInt()
+    private val mus = if (night) 0xFFFFC458.toInt() else 0xFFF2B544.toInt()
+    private val red = if (night) 0xFFFF6B55.toInt() else 0xFFE0503A.toInt()
+    private val pix = ResourcesCompat.getFont(ctx, R.font.jersey)
+    private val title = TextView(ctx).apply { textSize = 19f; typeface = pix; setTextColor(fg) }
+    private val sub = TextView(ctx).apply { textSize = 13f; typeface = ResourcesCompat.getFont(ctx, R.font.rubik); setTextColor(fg) }
+    private val bar = FrameLayout(ctx).apply { background = box(0x00000000, fg, ctx.dp(2)) }
+    private val fill = View(ctx).apply { setBackgroundColor(mus) }
+    private val buttons = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+    private val root = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(ctx.dp(14), ctx.dp(12), ctx.dp(14), ctx.dp(12))
+        background = box(card, if (night) 0xFF07060A.toInt() else 0xFF2B2118.toInt(), ctx.dp(3)); elevation = ctx.dp(8).toFloat()
+        addView(title); addView(sub)
+        addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, ctx.dp(12)).apply { topMargin = ctx.dp(8) })
+        addView(buttons, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = ctx.dp(10) })
+    }
+    private var tick: Runnable? = null
+
+    init {
+        bar.addView(fill, FrameLayout.LayoutParams(0, FrameLayout.LayoutParams.MATCH_PARENT))
+        val lp = overlayParams((ctx.resources.displayMetrics.widthPixels * .92f).toInt(), WindowManager.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = ctx.dp(40)
+        }
+        wm.addView(root, lp)
+    }
+
+    private fun button(label: String, primary: Boolean, act: () -> Unit) = TextView(ctx).apply {
+        text = label; gravity = Gravity.CENTER; textSize = 16f; typeface = pix
+        setTextColor(if (primary) 0xFFFFF6E6.toInt() else fg); setPadding(0, ctx.dp(8), 0, ctx.dp(8))
+        background = box(if (primary) red else 0x00000000, fg, ctx.dp(2))
+        setOnClickListener { act() }
+    }
+
+    private fun setButtons(vararg b: Pair<String, () -> Unit>) {
+        buttons.removeAllViews()
+        b.forEachIndexed { i, (label, act) ->
+            buttons.addView(button(label, i == b.lastIndex, act), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { if (i > 0) marginStart = ctx.dp(8) })
+        }
+    }
+
+    private fun setFill(f: Float) {
+        bar.post { fill.layoutParams = fill.layoutParams.apply { width = ((bar.width - ctx.dp(4)) * f.coerceIn(0f, 1f)).toInt() }; (fill.layoutParams as FrameLayout.LayoutParams).setMargins(ctx.dp(2), ctx.dp(2), 0, ctx.dp(2)); fill.requestLayout() }
+    }
+
+    /** "Jaga api N teman, mulai 5 detik lagi" + Tunda 1 jam / Mulai. Kalau dibiarin, mulai sendiri. */
+    fun countdown(n: Int, onSnooze: () -> Unit, onStart: () -> Unit) {
+        var left = 5
+        title.text = "🔥 Jaga api $n teman"
+        setButtons("Tunda 1 jam" to { stopTick(); onSnooze() }, "Mulai" to { stopTick(); onStart() })
+        tick = object : Runnable {
+            override fun run() {
+                if (left <= 0) { stopTick(); onStart(); return }
+                sub.text = "Mulai $left detik lagi. Layar dipinjam sebentar, nanti balik sendiri."
+                setFill((5 - left) / 5f); left--
+                root.postDelayed(this, 1_000)
+            }
+        }.also { it.run() }
+    }
+
+    private fun stopTick() { tick?.let(root::removeCallbacks); tick = null }
+
+    /** Progres: i dari n, lagi ngirim ke [name]. */
+    fun progress(i: Int, n: Int, name: String, onCancel: () -> Unit) {
+        title.text = "🔥 Jaga api · ${minOf(i + 1, n)}/$n"
+        sub.text = if (i >= n) "Beres, balik ke tadi..." else "Lagi ke $name. Jangan sentuh layar dulu ya."
+        setFill(i / n.toFloat().coerceAtLeast(1f))
+        if (buttons.childCount != 1) setButtons("Batal" to onCancel)
+    }
+
+    fun dismiss() {
+        stopTick()
+        if (root.isAttachedToWindow) wm.removeView(root)
+        onClose()
+    }
+}

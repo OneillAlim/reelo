@@ -32,7 +32,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import app.reelo.ui.ApiFriends
+import app.reelo.ui.ApiLog
+import app.reelo.ui.ApiMsgs
 import app.reelo.ui.Detail
+import app.reelo.ui.JagaApi
 import app.reelo.ui.FilmNav
 import app.reelo.ui.Home
 import app.reelo.ui.Insight
@@ -82,6 +86,10 @@ private sealed interface Sub {
     data object RecapS : Sub
     data object SettingsS : Sub
     data object TemaS : Sub
+    data object ApiS : Sub
+    data object ApiFriendsS : Sub
+    data object ApiMsgsS : Sub
+    data object ApiLogS : Sub
 }
 
 @Composable
@@ -104,7 +112,7 @@ fun ReeloApp(act: ComponentActivity) {
     val pal = if (shown) Night else Day
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var sub by remember { mutableStateOf<Sub?>(null) }
-    BackHandler(sub != null) { sub = if (sub == Sub.TemaS) Sub.SettingsS else null }
+    BackHandler(sub != null) { sub = when (sub) { Sub.TemaS -> Sub.SettingsS; Sub.ApiFriendsS, Sub.ApiMsgsS, Sub.ApiLogS -> Sub.ApiS; else -> null } }
     BackHandler(sub == null && tab != 0) { tab = 0 }
 
     CompositionLocalProvider(LocalPal provides pal, LocalReduce provides p.reduceMotion, LocalMascot provides p.mascot, LocalAcc provides p.acc) {
@@ -118,6 +126,10 @@ fun ReeloApp(act: ComponentActivity) {
                             Sub.RecapS -> Recap { sub = null }
                             Sub.SettingsS -> SettingsScreen({ sub = null }, { sub = Sub.TemaS })
                             Sub.TemaS -> Tema { sub = Sub.SettingsS }
+                            Sub.ApiS -> JagaApi({ sub = null }, { sub = Sub.ApiFriendsS }, { sub = Sub.ApiMsgsS }, { sub = Sub.ApiLogS })
+                            Sub.ApiFriendsS -> ApiFriends { sub = Sub.ApiS }
+                            Sub.ApiMsgsS -> ApiMsgs { sub = Sub.ApiS }
+                            Sub.ApiLogS -> ApiLog { sub = Sub.ApiS }
                             // pindah tab = geser satu frame film, arahnya ikut urutan tab
                             null -> AnimatedContent(tab, transitionSpec = {
                                 val dir = if (targetState > initialState) 1 else -1
@@ -126,9 +138,9 @@ fun ReeloApp(act: ComponentActivity) {
                                     slideOutHorizontally(tween(ms, easing = steps(4))) { -it * dir })
                             }, label = "tab") { t ->
                                 when (t) {
-                                    0 -> Home({ sub = Sub.AppDetail(it) }, { sub = Sub.RecapS })
+                                    0 -> Home({ sub = Sub.AppDetail(it) }, { sub = Sub.RecapS }, { sub = Sub.ApiS })
                                     1 -> Insight()
-                                    2 -> Kendali()
+                                    2 -> Kendali { sub = Sub.ApiS }
                                     3 -> Lemari()
                                     else -> Saya({ sub = Sub.SettingsS }, { sub = Sub.RecapS })
                                 }

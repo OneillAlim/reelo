@@ -75,7 +75,7 @@ private val POKES = listOf("Hehe, geli.", "Aku nggak ke mana-mana kok.", "Geser 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun Home(onApp: (App) -> Unit, onRecap: () -> Unit) {
+fun Home(onApp: (App) -> Unit, onRecap: () -> Unit, onApi: () -> Unit) {
     val ctx = LocalContext.current
     val p = prefs()
     val pal = LocalPal.current
@@ -218,6 +218,7 @@ fun Home(onApp: (App) -> Unit, onRecap: () -> Unit) {
                 }
             }
             if (di == 0) ChallengeCard(date, data, limit) { confetti++ }
+            if (di == 0) ApiCard(onApi)
             if (maxBack >= 1) Card(onClick = onRecap) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) { Txt("Recap 7 hari", bold = true); Small("Rangkuman yang bisa kamu bagikan") }
@@ -236,6 +237,32 @@ private fun spinning(spin: Int): Boolean {
     var on by remember(spin) { mutableStateOf(true) }
     LaunchedEffect(spin) { delay(120); on = false }
     return on
+}
+
+/** Kartu Jaga Api di Beranda: status singkat, ketuk buat buka. */
+@Composable
+private fun ApiCard(onClick: () -> Unit) {
+    val ctx = LocalContext.current
+    val p = prefs()
+    val v = Live.v
+    val (on, total) = load(v, initial = 0 to 0) { Db.get(ctx).friends().filter { it.streak > 0 }.let { l -> l.count { it.on } to l.size } }
+    val today = app.reelo.Flame.day(System.currentTimeMillis()).toString()
+    val sentToday = load(v, initial = 0) { Db.get(ctx).sentOk(app.reelo.Flame.day(System.currentTimeMillis())).size }
+    Card(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FlameIcon(22.dp)
+            Column(Modifier.weight(1f)) {
+                Lbl("Jaga Api TikTok")
+                Txt(when {
+                    total == 0 -> "Nyalain streak otomatis tiap 00.00"
+                    !p.flameOn -> "Mati · $on teman dicentang"
+                    p.flameLastRun == today -> "Hari ini $sentToday api aman"
+                    else -> "$on teman · jalan jam 00.00"
+                }, 14.sp, bold = true)
+            }
+            Px(">", 20.sp)
+        }
+    }
 }
 
 @Composable

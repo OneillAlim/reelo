@@ -63,6 +63,12 @@ class Prefs private constructor(val sp: SharedPreferences) {
     var milestone by str("")
     /** "tanggal|dump SwipeCounter": hash reel yang udah kelihatan hari ini. */
     var seenStr by str("")
+    var flameOn by bool(false)
+    var flameWarned by bool(false)
+    var flameSnoozeUntil by long(0)
+    /** Tanggal (hari api, ganti jam 00.00) terakhir Jaga Api selesai jalan. */
+    var flameLastRun by str("")
+    var flameScanTs by long(0)
     /** Tanggal terakhir konfeti tantangan diputar. */
     var cheered by str("")
     var limitTiktok by int(30)

@@ -35,7 +35,7 @@ import app.reelo.Stats
 import kotlinx.coroutines.delay
 
 @Composable
-fun Kendali() {
+fun Kendali(onApi: () -> Unit) {
     val p = prefs()
     val pal = LocalPal.current
     val today = Days.today()
@@ -46,6 +46,13 @@ fun Kendali() {
 
     Screen {
         Top("Kendali") { Lbl("Total ${p.totalLimit}") }
+        Card(onClick = onApi) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FlameIcon(20.dp)
+                Column(Modifier.weight(1f)) { Txt("Jaga Api TikTok", bold = true); Small(if (p.flameOn) "Nyala · jalan tiap 00.00" else "Nyalain streak otomatis biar nggak perlu buka TikTok tengah malam") }
+                Px(">", 20.sp)
+            }
+        }
         Card {
             Lbl("Jatah reels per hari")
             App.entries.forEach { app ->

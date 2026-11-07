@@ -35,6 +35,11 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     private val nudged = mutableSetOf<String>()
     private val nextPause = mutableMapOf<String, Int>()
     private val debug by lazy { applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 }
+    private val bot by lazy { TikTokBot(this) }
+    private var flameCard: FlameCard? = null
+    private val unlock = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) { flameMaybe() }
+    }
 
     override fun onServiceConnected() {
         p = Prefs.get(this); db = Db.get(this)
@@ -46,13 +51,19 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         p.seenStr.split('|', limit = 2).takeIf { it.size == 2 && it[0] == day.toString() }?.let { counter.load(it[1]) }
         refreshFloat()
         running = true
+        inst = this
+        androidx.core.content.ContextCompat.registerReceiver(this, unlock, android.content.IntentFilter(Intent.ACTION_USER_PRESENT), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        armMidnight()
         Live.bump()
     }
 
     override fun onDestroy() {
         if (::p.isInitialized) p.sp.unregisterOnSharedPreferenceChangeListener(this)
-        float?.remove(); pause?.dismiss()
+        float?.remove(); pause?.dismiss(); flameCard?.dismiss()
         h.removeCallbacksAndMessages(null)
+        runCatching { unregisterReceiver(unlock) }
+        if (inst === this) inst = null
+        bot.destroy()
         running = false
         Live.bump()
         super.onDestroy()
@@ -77,6 +88,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     }
 
     private fun onScroll(e: AccessibilityEvent) {
+        if (bot.running) return // robot Jaga Api lagi scroll Inbox, bukan kamu
         val app = App.of(e.packageName) ?: return
         val src = e.source ?: return
         val r = Rect().also { src.getBoundsInScreen(it) }
@@ -132,6 +144,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     }
 
     private fun checkLimits(app: App, now: Long) {
+        if (bot.running) return
         val (d, counts) = today()
         val n = counts.getValue(app)
         val limit = p.limit(app)
@@ -178,6 +191,88 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         h.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 300)
     }
 
+    // ---- Jaga Api ----
+
+    private val midnight = Runnable { flameMaybe(); armMidnight() }
+
+    /** Timer ke 00.00 berikutnya (+2 dtk biar pasti udah ganti hari). Dipasang ulang tiap kali jalan. */
+    private fun armMidnight() {
+        h.removeCallbacks(midnight)
+        h.postDelayed(midnight, Flame.untilMidnight(System.currentTimeMillis()) + 2_000)
+    }
+
+    /** Teman yang mau dikirimin hari ini + pesannya. Kosong kalau semua udah kebagian. */
+    private fun flameItems(only: String? = null): List<Pair<Friend, Msg>> {
+        val today = Flame.day(System.currentTimeMillis())
+        val done = db.sentOk(today)
+        val msgs = db.msgs()
+        val rnd = java.util.Random()
+        return db.friends().filter { it.on && it.streak > 0 && it.name !in done && (only == null || it.name == only) }
+            .take(Flame.MAX_FRIENDS)
+            .mapNotNull { f -> Flame.pick(msgs, db.lastMsg(f.name), rnd)?.let { f to it } }
+    }
+
+    /**
+     * Cek apakah Jaga Api harus jalan sekarang: nyala, belum jalan hari ini, nggak ditunda, HP kebuka, nggak lagi telepon.
+     * Kalau iya: hitung mundur 5 detik. Dipanggil jam 00.00 dan tiap HP dibuka. [force] = tombol tes di build debug.
+     */
+    fun flameMaybe(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && (!p.flameOn || !Flame.due(p.flameLastRun, now) || now < p.flameSnoozeUntil)) return
+        if (bot.running || flameCard != null || pause != null) return
+        if (getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked) return
+        if (getSystemService(android.media.AudioManager::class.java).mode != android.media.AudioManager.MODE_NORMAL) return
+        val items = flameItems()
+        if (items.isEmpty()) return // belum ada teman/pesan, atau semua udah kebagian; dicek lagi pas HP dibuka berikutnya
+        float?.hide()
+        flameCard = FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() }).also { card ->
+            card.countdown(items.size, onSnooze = { p.flameSnoozeUntil = System.currentTimeMillis() + 60 * 60_000; card.dismiss() }, onStart = { flameRun(items, test = false) })
+        }
+    }
+
+    /** Dari layar Jaga Api: kirim sekarang (semua) atau tes ke satu teman. */
+    fun flameNow(only: String? = null): Int {
+        if (bot.running) return -1
+        val items = flameItems(only)
+        if (items.isNotEmpty()) flameRun(items, test = only != null)
+        return items.size
+    }
+
+    private fun flameRun(items: List<Pair<Friend, Msg>>, test: Boolean) {
+        val today = Flame.day(System.currentTimeMillis())
+        float?.hide()
+        val card = flameCard ?: FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() }).also { flameCard = it }
+        var ok = 0
+        val back = fgPkg
+        bot.send(items, back,
+            progress = { i, n, name -> card.progress(i, n, name) { bot.stop() } },
+            each = { f, m, note -> db.logSent(today, f.name, m.id, note == null, note); if (note == null) ok++ },
+            done = { cancelled ->
+                if (!test && !cancelled) p.flameLastRun = today.toString()
+                card.dismiss()
+                Live.bump()
+                notifyFlame(ok, items.size, cancelled)
+            })
+    }
+
+    /** Dari layar Teman: pindai Inbox. done(jumlah) atau null kalau gagal. */
+    fun flameScan(done: (Int?) -> Unit) {
+        if (bot.running) { done(null); return }
+        bot.scan(fgPkg) { found ->
+            if (found != null) { db.saveScan(found); p.flameScanTs = System.currentTimeMillis() }
+            Live.bump(); done(found?.size)
+        }
+    }
+
+    private fun notifyFlame(ok: Int, n: Int, cancelled: Boolean) {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
+        val title = if (ok == n) "Api $ok teman aman 🔥" else "Api $ok dari $n teman aman"
+        val text = when { cancelled -> "Dibatalin di tengah jalan."; ok < n -> "${n - ok} gagal. Ketuk buat lihat alasannya."; else -> "Tinggal tunggu mereka bales." }
+        val nn = NotificationCompat.Builder(this, CH_NUDGE).setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle(title).setContentText(text).setContentIntent(openApp(this, false)).setAutoCancel(true).build()
+        runCatching { NotificationManagerCompat.from(this).notify(NOTIF_FLAME, nn) }
+    }
+
     private fun nudge(app: App, n: Int, limit: Int) {
         if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
         val n2 = NotificationCompat.Builder(this, CH_NUDGE).setSmallIcon(R.drawable.ic_stat)
@@ -208,7 +303,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     private fun refreshFloat() {
         val f = float ?: return
         val now = System.currentTimeMillis()
-        val visible = p.floatOn && now >= p.snoozeUntil && fgPkg != packageName && pause == null
+        val visible = p.floatOn && now >= p.snoozeUntil && fgPkg != packageName && pause == null && flameCard == null
         if (p.snoozeUntil > now) { h.removeCallbacksAndMessages(SNOOZE); h.postAtTime({ refreshFloat() }, SNOOZE, SystemClock.uptimeMillis() + (p.snoozeUntil - now)) }
         if (!visible) { f.hide(); return }
         val (_, counts) = today()
@@ -238,6 +333,9 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         const val CH_NUDGE = "nudge"
         const val CH_FLOAT = "float"
         const val NOTIF_FLOAT = 1
+        const val NOTIF_FLAME = 2
+        /** Service yang lagi nyambung, buat layar Jaga Api (pindai/kirim). null kalau penghitung mati. */
+        @Volatile var inst: ReelService? = null
         private val SNOOZE = Any()
         private const val SETTLE_MS = 350L
         /** Jendela yang nongol sebentar di atas app (notif shade, dialog izin). Jangan dianggap keluar dari reels. */
