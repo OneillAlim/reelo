@@ -37,6 +37,31 @@ class StatsTest {
         assertEquals(1, swipe(2221))
     }
 
+    @Test fun fingerprintStopsRecount() {
+        val c = SwipeCounter()
+        fun go(pages: Int, fp: Int?): Int { c.scroll(App.TIKTOK, pages * 2400, 2400); return c.settle(App.TIKTOK, fp) }
+        // A, B, C, balik ke B, maju ke C, lalu D baru
+        val got = listOf(go(1, 'B'.code), go(1, 'C'.code), go(-1, 'B'.code), go(1, 'C'.code), go(1, 'D'.code))
+        assertEquals(listOf(1, 1, 0, 0, 1), got)
+        // keluar app (posisi direset), balik ke reel yang sama: tetap nggak dihitung
+        c.reset(App.TIKTOK)
+        assertEquals(0, go(-1, 'C'.code))
+        assertEquals(0, go(1, 'D'.code))
+        assertEquals(1, go(1, 'E'.code))
+        // fp sama padahal pindah halaman = cuma kebaca tombol, balik ke hitungan posisi
+        assertEquals(1, go(1, 'E'.code))
+        c.newDay()
+        assertEquals(1, go(1, 'B'.code))
+    }
+
+    @Test fun fingerprintIgnoresVolatileText() {
+        val a = Detectors.fingerprint(listOf("@budi", "Share video. 1,2K shares", "Like video. 72 likes", "0 minutes 5 seconds of 1 minute", "Pause video", "masak nasi goreng"))
+        val b = Detectors.fingerprint(listOf("@budi", "Like video. 73 likes", "Share video. 998 shares", "Play video", "masak nasi goreng", null))
+        assertEquals(a, b)
+        assertTrue(a != Detectors.fingerprint(listOf("@budi", "resep mie")))
+        assertEquals(null, Detectors.fingerprint(listOf("12", "Pause", null)))
+    }
+
     @Test fun detectorsNeedReelScreens() {
         assertTrue(Detectors.isReel(App.SHORTS, "com.google.android.youtube:id/reel_recycler", "RecyclerView", 0.95f))
         assertFalse(Detectors.isReel(App.SHORTS, "com.google.android.youtube:id/results", "RecyclerView", 0.95f))

@@ -32,9 +32,16 @@ adb shell settings put secure enabled_accessibility_services app.reelo/app.reelo
 ```
 
 ## Cara ngitung
-Reelo ngitung **reel baru**, bukan jumlah gerakan jempol. Event scroll dari pager reels dijumlah, terus pas layar
-berhenti, totalnya dibagi tinggi halaman. Yang dihitung cuma posisi yang lebih jauh dari yang pernah dicapai,
-jadi geser setengah lalu balik, swipe mundur, dan nonton ulang nggak nambah hitungan.
+Reelo ngitung **reel baru**, bukan jumlah gerakan jempol.
+1. Event scroll dari pager reels dijumlah. Pas layar berhenti (350 ms), totalnya dibagi tinggi halaman jadi langkah
+   (+1 maju, -1 mundur, 0 kalau geser nggak jadi).
+2. Abis itu service baca **sidik jari** reel yang lagi di tengah layar: semua teks/contentDescription di halaman itu
+   (username, caption, judul lagu), tanpa angka dan tanpa kata yang bisa berubah sendiri (play/pause, like, follow,
+   durasi). Lihat `Detectors.clean`.
+3. Reel dihitung cuma kalau langkahnya maju **dan** sidik jarinya belum pernah kelihatan hari ini. Jadi scroll ke
+   atas lalu balik ke bawah, buka notif lalu balik, atau keluar-masuk app nggak bikin reel yang sama kehitung lagi.
+4. Kalau sidik jari nggak kebaca (null, atau sama persis padahal pindah halaman), balik ke cara lama: cuma posisi
+   yang lebih jauh dari yang pernah dicapai.
 
 ## Kalau hitungan meleset
 Semua aturan "lagi di layar reels" ada di `app/src/main/java/app/reelo/Detectors.kt`.
@@ -43,7 +50,9 @@ Build debug nulis tiap event scroll ke logcat. Buka layar reels, swipe, lalu lih
 adb logcat -s ReeloScroll
 ```
 Kalau `reel=false` di layar reels, sesuaikan id/kelasnya di `Detectors.kt`. Tiap swipe harusnya diakhiri `settle +1`
-(maju ke reel baru) atau `settle +0` (mundur, nonton ulang, atau geser nggak jadi).
+(maju ke reel baru) atau `settle +0` (mundur, nonton ulang, atau geser nggak jadi). Baris `settle` juga nampilin
+`fp=` dan potongan teks yang dipakai. Kalau reel beda tapi fp-nya sama terus, berarti teksnya kebuang semua:
+cek `VOLATILE` di `Detectors.kt`.
 
 Dites di POCO X5 5G (HyperOS, Android 14), 7 Nov 2026:
 
@@ -52,6 +61,9 @@ Dites di POCO X5 5G (HyperOS, Android 14), 7 Nov 2026:
 | TikTok (`trill`) | `viewpager` (ViewPager) | 2221 px |
 | YouTube Shorts | `reel_recycler` (RecyclerView) | 2130 px |
 | Instagram Reels | `clips_viewer_view_pager` (ViewPager) | 2130 px |
+
+Dites ulang di Xiaomi 14T (HyperOS, Android 15, 1220x2712), 7 Nov 2026: id yang sama, jarak 1 reel sekitar
+2400 px (TikTok) dan 2285 px (Shorts/IG). Sidik jari kebaca di ketiga app.
 
 Di HyperOS/MIUI, nyalakan **Mulai otomatis** buat Reelo. Kalau nggak, sistem bisa matiin penghitungnya diam-diam.
 Beranda bakal nampilin peringatan kalau itu kejadian.

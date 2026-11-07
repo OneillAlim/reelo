@@ -15,6 +15,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import java.time.LocalDate
@@ -29,6 +30,8 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     private var float: FloatingMascot? = null
     private var pause: PauseCard? = null
     private var fgPkg: String? = null
+    private var day = Days.today()
+    private val pagers = HashMap<App, AccessibilityNodeInfo>()
     private val nudged = mutableSetOf<String>()
     private val nextPause = mutableMapOf<String, Int>()
     private val debug by lazy { applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 }
@@ -64,7 +67,9 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         when (e.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 val pkg = rootInActiveWindow?.packageName?.toString() ?: return
-                if (pkg != fgPkg) { App.of(fgPkg)?.let { counter.reset(it) }; fgPkg = pkg; refreshFloat() }
+                if (pkg == fgPkg || pkg in TRANSIENT || pkg == ime()) return
+                App.of(fgPkg)?.let { counter.reset(it) }
+                fgPkg = pkg; refreshFloat()
             }
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> onScroll(e)
         }
@@ -79,13 +84,17 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         if (debug) Log.d("ReeloScroll", "$app id=${src.viewIdResourceName} cls=${e.className} r=${"%.2f".format(ratio)} idx=${e.fromIndex} dy=${e.scrollDeltaY} reel=$reel")
         if (!reel || rootInActiveWindow?.packageName != e.packageName) return
         counter.scroll(app, e.scrollDeltaY, r.height())
+        pagers[app] = src
         h.removeCallbacksAndMessages(app)
         h.postAtTime({ settle(app) }, app, SystemClock.uptimeMillis() + SETTLE_MS)
     }
 
     private fun settle(app: App) {
-        val n = counter.settle(app)
-        if (debug) Log.d("ReeloScroll", "$app settle +$n")
+        Days.today().let { if (it != day) { day = it; counter.newDay() } }
+        val parts = page(app)
+        val fp = parts?.let(Detectors::fingerprint)
+        val n = counter.settle(app, fp)
+        if (debug) Log.d("ReeloScroll", "$app settle +$n fp=$fp ${parts?.mapNotNull(Detectors::clean)?.distinct()?.take(6)}")
         if (n <= 0) return
         val now = System.currentTimeMillis()
         repeat(n) { db.add(app, now) }
@@ -94,6 +103,25 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         refreshFloat()
         checkLimits(app, now)
     }
+
+    /** Teks di halaman pager yang nutupin tengah layar, yaitu reel yang lagi diputar. */
+    private fun page(app: App): List<CharSequence?>? {
+        val src = pagers[app]?.takeIf { it.refresh() } ?: return null
+        val cx = resources.displayMetrics.widthPixels / 2; val cy = resources.displayMetrics.heightPixels / 2
+        val r = Rect()
+        val cur = (0 until src.childCount).firstNotNullOfOrNull { i -> src.getChild(i)?.takeIf { it.getBoundsInScreen(r); r.contains(cx, cy) } } ?: return null
+        val out = ArrayList<CharSequence?>()
+        val q = ArrayDeque(listOf(cur))
+        var budget = 120
+        while (q.isNotEmpty() && budget-- > 0) {
+            val n = q.removeFirst()
+            if (n.className?.contains("SeekBar") != true) { out += n.text; out += n.contentDescription }
+            for (i in 0 until n.childCount) n.getChild(i)?.let(q::add)
+        }
+        return out
+    }
+
+    private fun ime() = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)?.substringBefore('/')
 
     private fun today(): Pair<LocalDate, Map<App, Int>> {
         val d = Days.today()
@@ -202,6 +230,8 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         const val NOTIF_FLOAT = 1
         private val SNOOZE = Any()
         private const val SETTLE_MS = 350L
+        /** Jendela yang nongol sebentar di atas app (notif shade, dialog izin). Jangan dianggap keluar dari reels. */
+        private val TRANSIENT = setOf("com.android.systemui", "com.google.android.permissioncontroller", "com.miui.securitycenter")
 
         /** true cuma kalau service beneran nyambung. HyperOS/MIUI kadang matiin prosesnya tapi pengaturan tetap nyala. */
         @Volatile var running = false

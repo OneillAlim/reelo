@@ -20,4 +20,18 @@ object Detectors {
             App.IG -> id.contains("clips") || (full && id.contains("reel"))
         }
     }
+
+    /** Kata yang berubah sendiri di reel yang sama (tombol play/like/follow, durasi). Jangan masuk sidik jari. */
+    private val VOLATILE = Regex("(?i)pause|play|jeda|putar|minute|second|menit|detik|loading|memuat|mute|like|suka|follow|ikuti|subscri|langgan")
+    private val DIGITS = Regex("""\d[\d.,:]*\s?(rb|jt|[KMB])?\b""")
+    private val SPACE = Regex("""\s+""")
+
+    /** Potongan teks yang aman dipakai buat sidik jari reel, atau null kalau isinya bisa berubah. */
+    fun clean(s: CharSequence?): String? {
+        if (s.isNullOrBlank()) return null
+        val t = DIGITS.replace(s, "").replace(SPACE, " ").trim()
+        return t.takeIf { it.length >= 2 && !VOLATILE.containsMatchIn(it) }
+    }
+
+    fun fingerprint(parts: List<CharSequence?>): Int? = parts.mapNotNull(::clean).distinct().sorted().takeIf { it.isNotEmpty() }?.joinToString("|")?.hashCode()
 }

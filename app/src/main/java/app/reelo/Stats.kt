@@ -113,22 +113,34 @@ object Stats {
     fun stage(best: Int) = when { best >= 30 -> 2; best >= 14 -> 1; else -> 0 }
 }
 
-/** Satu reel = item pager berganti (kalau app kasih index), dan selalu minimal 600 ms dari reel sebelumnya biar satu swipe nggak kehitung dua kali. */
 /**
  * Ngitung reel baru, bukan jumlah gerakan. Event scroll dari pager/list reels dijumlah, lalu pas berhenti
- * dibagi tinggi halaman jadi langkah (+1 maju, -1 mundur, 0 kalau geser lalu balik). Yang dihitung cuma posisi
- * yang lebih jauh dari yang pernah dicapai, jadi swipe mundur lalu nonton ulang nggak nambah hitungan.
+ * dibagi tinggi halaman jadi langkah (+1 maju, -1 mundur, 0 kalau geser lalu balik).
+ *
+ * Kalau service bisa baca isi reel (username, caption), sidik jarinya (fp) yang nentuin: reel yang pernah
+ * kelihatan hari ini nggak dihitung lagi, mau balik lewat scroll atau setelah buka notif. Kalau fp null,
+ * pakai posisi terjauh yang pernah dicapai.
  */
 class SwipeCounter {
     private class S { var idx = 0; var best = 0; var px = 0; var page = 0 }
     private val st = HashMap<App, S>()
+    private val seen = HashMap<App, LinkedHashSet<Int>>()
+    private val last = HashMap<App, Int?>()
 
     fun scroll(app: App, dy: Int, page: Int) {
         val s = st.getOrPut(app) { S() }
         s.px += dy; if (page > 0) s.page = page
     }
 
-    fun settle(app: App): Int {
+    private fun see(app: App, fp: Int?): Boolean {
+        if (fp == null) return false
+        val set = seen.getOrPut(app) { LinkedHashSet() }
+        if (!set.add(fp)) return false
+        if (set.size > 500) set.remove(set.first())
+        return true
+    }
+
+    fun settle(app: App, fp: Int? = null): Int {
         val s = st[app] ?: return 0
         if (s.page <= 0) return 0
         val f = s.px.toFloat() / s.page
@@ -138,8 +150,14 @@ class SwipeCounter {
         s.px = 0
         val fresh = (s.idx - s.best).coerceAtLeast(0)
         s.best = maxOf(s.best, s.idx)
-        return fresh
+        // pindah halaman tapi fp sama: yang kebaca cuma tombol, bukan isi reel
+        val prev = last.put(app, fp)
+        if (fp == null || n != 0 && fp == prev) return fresh
+        val new = see(app, fp)
+        return if (n > 0 && new) fresh.coerceIn(1, n) else 0
     }
 
     fun reset(app: App) { st.remove(app) }
+
+    fun newDay() = seen.clear()
 }
