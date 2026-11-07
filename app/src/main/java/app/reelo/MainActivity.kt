@@ -92,6 +92,17 @@ private sealed interface Sub {
     data object ApiLogS : Sub
 }
 
+private fun keyOf(s: Sub): String = when (s) {
+    is Sub.AppDetail -> "app:${s.app.name}"
+    Sub.RecapS -> "recap"; Sub.SettingsS -> "settings"; Sub.TemaS -> "tema"
+    Sub.ApiS -> "api"; Sub.ApiFriendsS -> "apiFriends"; Sub.ApiMsgsS -> "apiMsgs"; Sub.ApiLogS -> "apiLog"
+}
+
+private fun subOf(k: String): Sub? = when {
+    k.startsWith("app:") -> App.entries.firstOrNull { it.name == k.removePrefix("app:") }?.let(Sub::AppDetail)
+    else -> listOf(Sub.RecapS, Sub.SettingsS, Sub.TemaS, Sub.ApiS, Sub.ApiFriendsS, Sub.ApiMsgsS, Sub.ApiLogS).firstOrNull { keyOf(it) == k }
+}
+
 @Composable
 fun ReeloApp(act: ComponentActivity) {
     val p = prefs()
@@ -111,8 +122,11 @@ fun ReeloApp(act: ComponentActivity) {
     }
     val pal = if (shown) Night else Day
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var sub by remember { mutableStateOf<Sub?>(null) }
-    BackHandler(sub != null) { sub = when (sub) { Sub.TemaS -> Sub.SettingsS; Sub.ApiFriendsS, Sub.ApiMsgsS, Sub.ApiLogS -> Sub.ApiS; else -> null } }
+    // disimpan sebagai teks biar selamat kalau activity dibuat ulang (mis. abis Jaga Api buka TikTok lalu balik)
+    var subKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val sub = subKey?.let(::subOf)
+    fun go(s: Sub?) { subKey = s?.let(::keyOf) }
+    BackHandler(sub != null) { go(when (sub) { Sub.TemaS -> Sub.SettingsS; Sub.ApiFriendsS, Sub.ApiMsgsS, Sub.ApiLogS -> Sub.ApiS; else -> null }) }
     BackHandler(sub == null && tab != 0) { tab = 0 }
 
     CompositionLocalProvider(LocalPal provides pal, LocalReduce provides p.reduceMotion, LocalMascot provides p.mascot, LocalAcc provides p.acc) {
@@ -122,14 +136,14 @@ fun ReeloApp(act: ComponentActivity) {
                 else {
                     Box(Modifier.weight(1f)) {
                         when (val s = sub) {
-                            is Sub.AppDetail -> Detail(s.app) { sub = null }
-                            Sub.RecapS -> Recap { sub = null }
-                            Sub.SettingsS -> SettingsScreen({ sub = null }, { sub = Sub.TemaS })
-                            Sub.TemaS -> Tema { sub = Sub.SettingsS }
-                            Sub.ApiS -> JagaApi({ sub = null }, { sub = Sub.ApiFriendsS }, { sub = Sub.ApiMsgsS }, { sub = Sub.ApiLogS })
-                            Sub.ApiFriendsS -> ApiFriends { sub = Sub.ApiS }
-                            Sub.ApiMsgsS -> ApiMsgs { sub = Sub.ApiS }
-                            Sub.ApiLogS -> ApiLog { sub = Sub.ApiS }
+                            is Sub.AppDetail -> Detail(s.app) { go(null) }
+                            Sub.RecapS -> Recap { go(null) }
+                            Sub.SettingsS -> SettingsScreen({ go(null) }, { go(Sub.TemaS) })
+                            Sub.TemaS -> Tema { go(Sub.SettingsS) }
+                            Sub.ApiS -> JagaApi({ go(null) }, { go(Sub.ApiFriendsS) }, { go(Sub.ApiMsgsS) }, { go(Sub.ApiLogS) })
+                            Sub.ApiFriendsS -> ApiFriends { go(Sub.ApiS) }
+                            Sub.ApiMsgsS -> ApiMsgs { go(Sub.ApiS) }
+                            Sub.ApiLogS -> ApiLog { go(Sub.ApiS) }
                             // pindah tab = geser satu frame film, arahnya ikut urutan tab
                             null -> AnimatedContent(tab, transitionSpec = {
                                 val dir = if (targetState > initialState) 1 else -1
@@ -138,16 +152,16 @@ fun ReeloApp(act: ComponentActivity) {
                                     slideOutHorizontally(tween(ms, easing = steps(4))) { -it * dir })
                             }, label = "tab") { t ->
                                 when (t) {
-                                    0 -> Home({ sub = Sub.AppDetail(it) }, { sub = Sub.RecapS }, { sub = Sub.ApiS })
+                                    0 -> Home({ go(Sub.AppDetail(it)) }, { go(Sub.RecapS) }, { go(Sub.ApiS) })
                                     1 -> Insight()
-                                    2 -> Kendali { sub = Sub.ApiS }
+                                    2 -> Kendali { go(Sub.ApiS) }
                                     3 -> Lemari()
-                                    else -> Saya({ sub = Sub.SettingsS }, { sub = Sub.RecapS })
+                                    else -> Saya({ go(Sub.SettingsS) }, { go(Sub.RecapS) })
                                 }
                             }
                         }
                     }
-                    if (sub == null || sub is Sub.AppDetail) FilmNav(tab) { tab = it; sub = null }
+                    if (sub == null || sub is Sub.AppDetail) FilmNav(tab) { tab = it; go(null) }
                 }
             }
             if (fade.value > 0f) Box(Modifier.fillMaxSize().background(Color(0xFF050307).copy(alpha = fade.value)))

@@ -35,6 +35,9 @@ object TikTokUi {
  */
 class TikTokBot(private val svc: AccessibilityService) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val debug = svc.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+    /** Log langkah robot di build debug: `adb logcat -s ReeloBot`. Nggak pernah nulis nama teman atau isi pesan. */
+    private fun log(s: String) { if (debug) android.util.Log.d("ReeloBot", s) }
     private var job: Job? = null
     val running get() = job?.isActive == true
 
@@ -97,7 +100,9 @@ class TikTokBot(private val svc: AccessibilityService) {
     private suspend fun open(pkg: String): Boolean {
         val i = svc.packageManager.getLaunchIntentForPackage(pkg) ?: return false
         svc.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        return waitFor { r -> r.takeIf { it.packageName == pkg } } != null
+        val ok = waitFor { r -> r.takeIf { it.packageName == pkg } } != null
+        log("open $pkg ok=$ok root=${root()?.packageName}")
+        return ok
     }
 
     /** Ke tab Inbox. Kalau lagi di layar lain (chat, video), mundur dulu. */
@@ -105,8 +110,9 @@ class TikTokBot(private val svc: AccessibilityService) {
         repeat(4) {
             if (root()?.all()?.any(TikTokUi::isName) == true && root()?.all()?.any { it.contentDescription?.toString() in TikTokUi.INBOX } == true) return true
             val tab = waitFor(3_000) { r -> r.all().firstOrNull { it.contentDescription?.toString() in TikTokUi.INBOX } }
+            log("inbox try=$it tab=${tab != null} nodes=${root()?.all()?.size}")
             if (tab == null) { svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK); delay(700); return@repeat }
-            click(tab)
+            log("click tab=${click(tab)}")
             if (waitFor(5_000) { r -> r.all().firstOrNull(TikTokUi::isName) } != null) return true
         }
         return false
@@ -140,7 +146,9 @@ class TikTokBot(private val svc: AccessibilityService) {
         for (i in 0 until 15) {
             val r = root() ?: break
             val before = found.size
-            rows(r).forEach { found.putIfAbsent(it.name, Friend(it.name, it.streak, true, it.restore)) }
+            val rs = rows(r)
+            rs.forEach { found.putIfAbsent(it.name, Friend(it.name, it.streak, true, it.restore)) }
+            log("scan page=$i rows=${rs.size} streak=${rs.count { it.streak > 0 }} restore=${rs.count { it.restore > 0 }} total=${found.size}")
             stale = if (found.size == before) stale + 1 else 0
             if (stale >= 2) break
             if (list(r)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) != true) break

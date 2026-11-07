@@ -3,6 +3,24 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-07 · Jaga Api: pindai dites di HP + perbaikan
+
+**Dicek di Xiaomi 14T.** Pindai Inbox jalan sekitar 15 detik (8 halaman, 60 chat) dan hasilnya cocok dengan Inbox:
+- 22 api nyala, angkanya sama (termasuk streak grup);
+- 4 api padam muncul di bagian "pulihkan di TikTok".
+
+**Perbaikan.**
+- **TikTok dikira nggak ter-install.** Android 11+ nyembunyiin app lain dari `getLaunchIntentForPackage` kecuali
+  dideklarasikan. Ditambah `<queries>` buat `com.ss.android.ugc.trill` dan `com.zhiliaoapp.musically` di manifest.
+- **Teman hasil pindai langsung dicentang semua.** Sekarang teman baru masuk dengan `on = 0`, jadi kamu yang milih.
+- **Abis pindai/kirim, Reelo balik ke Kendali.** Activity dibuat ulang pas balik dari TikTok, jadi layar yang lagi
+  dibuka (`Sub`) hilang. Sekarang disimpan lewat `rememberSaveable` sebagai teks (`keyOf`/`subOf` di
+  `MainActivity.kt`), dan pindah layar lewat `go(...)`.
+- **Log debug robot:** `adb logcat -s ReeloBot` nampilin langkah dan jumlah baris per halaman. Nama teman dan isi pesan
+  nggak pernah ditulis.
+
+**Belum.** Kirim pesan (Tes 1 teman) belum dicoba, karena nunggu Bryan milih teman buat dites.
+
 ## 2026-11-07 · Jaga Api: nyalain streak TikTok otomatis (kode jadi, belum dites di HP)
 
 > Status: build + unit test hijau. **Pindai dan kirim belum dicoba di HP** (HP lagi terkunci). Cara ngetes ada di bawah.

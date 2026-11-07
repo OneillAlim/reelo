@@ -33,7 +33,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "reelo.db", n
             execSQL("UPDATE friend SET streak = 0, restore = 0")
             found.forEach { f ->
                 // INSERT OR IGNORE + UPDATE, karena upsert baru ada di SQLite Android 11 (minSdk kita 28)
-                execSQL("INSERT OR IGNORE INTO friend(name) VALUES(?)", arrayOf<Any>(f.name))
+                execSQL("INSERT OR IGNORE INTO friend(name, \"on\") VALUES(?, 0)", arrayOf<Any>(f.name)) // teman baru nggak dicentang, kamu yang milih
                 execSQL("UPDATE friend SET streak = ?, restore = ? WHERE name = ?", arrayOf<Any>(f.streak, f.restoreDays, f.name))
             }
             setTransactionSuccessful()
