@@ -74,11 +74,14 @@ class SpriteView(ctx: Context, private val p: Prefs, private val px: Int) : View
             val label = n.toString()
             val w = maxOf(context.dp(22).toFloat(), badge.measureText(label) + context.dp(10))
             val r = width.toFloat(); val bh = context.dp(18).toFloat()
+            val lift = if (reduce) 0f else Bob.lift(now, heat, 0) * context.dp(1)
+            c.save(); c.translate(0f, lift + context.dp(3))
             // kedip: 200 ms nyala/mati pas nembus kelipatan 10, lalu makin sering sesuai heat (maks 2,5x per detik)
             val off = !reduce && (now < flashUntil && (now / 200) % 2 == 1L || heat > 0 && (now / BLINK[heat]) % 2 == 1L)
             fill.color = 0xFF2B2118.toInt(); c.drawRect(r - w - 2, 0f, r, bh + 2, fill)
             fill.color = if (off) HOT[heat].second else HOT[heat].first; c.drawRect(r - w, 2f, r - 2, bh, fill)
             c.drawText(label, r - w / 2 - 1, bh - context.dp(4), badge)
+            c.restore()
         }
         if (sleeping) {
             badge.textAlign = Paint.Align.LEFT
@@ -100,6 +103,8 @@ class SpriteView(ctx: Context, private val p: Prefs, private val px: Int) : View
 
 class FloatingMascot(private val ctx: Context, private val p: Prefs, private val line: () -> String, private val onTrash: () -> Unit, private val undo: () -> String) {
     private val wm = ctx.getSystemService(WindowManager::class.java)
+    /** Timer tidur/jalan/ngomong. Bukan view.postDelayed: itu nggak bisa dibatalin pas maskot lagi dilepas dari layar. */
+    private val h = android.os.Handler(android.os.Looper.getMainLooper())
     private val view = SpriteView(ctx, p, ctx.dp(2) + ctx.dp(1) / 2)
     private val lp = overlayParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT)
     private var attached = false
@@ -116,18 +121,20 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
     private val sayLp = overlayParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, touchable = false)
     private var sayShown = false
     private val trash = TextView(ctx).apply {
-        text = "x"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = 22f
+        text = "x"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = 26f
         typeface = ResourcesCompat.getFont(ctx, R.font.jersey); background = box(0x66000000, Color.WHITE, ctx.dp(3))
     }
     private val trashLp = overlayParams(ctx.dp(64), ctx.dp(64), touchable = false)
     private var trashShown = false
     private var menu: LinearLayout? = null
 
-    private val idle = Runnable { view.sleeping = true; view.invalidate() }
-    private val rnd = java.util.Random()
+    private val rise = Runnable { if (attached && view.sleeping) wake() }
+    // tidur abis 45 detik nganggur, bangun sendiri 1,5-2,5 menit kemudian terus jalan-jalan lagi
+    private val idle = Runnable { view.sleeping = true; view.invalidate(); h.postDelayed(rise, 90_000L + rnd.nextInt(60_000)) }
     private val patrol = Runnable { roam() }
     private var anim: ValueAnimator? = null
     private var lastCount = -1
+    private val rnd = java.util.Random()
     private val unsay = Runnable { if (sayShown) { wm.removeView(say); sayShown = false } }
 
     init {
@@ -138,7 +145,7 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 when {
                     peek != 0 -> { peek = 0; snap(); speak("Aku balik!") }
-                    view.sleeping -> { hop(34); speak("!"); view.postDelayed({ speak("Hoaam... aku ketiduran.") }, 700) }
+                    view.sleeping -> { hop(34); speak("!"); h.postDelayed({ speak("Hoaam... aku ketiduran.") }, 700) }
                     else -> { hop(); speak(line()) }
                 }
                 wake(); return true
@@ -187,10 +194,26 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
 
     private fun hideTrash() { if (trashShown) { wm.removeView(trash); trashShown = false } }
 
+    private var inReel = false
+
+    /**
+     * Tinggi yang aman buat maskot. Di app reels, sisi kanan dibatasi ke atas layar (10-26%) karena di bawahnya ada
+     * kolom tombol like/komentar/share. Sisi kiri boleh sampai 60% (di bawahnya caption).
+     */
+    private fun yRange(left: Boolean): IntRange {
+        val top = ctx.dp(40) + if (inReel) (screenH * .1f).toInt() else 0
+        val bottom = when { !inReel -> screenH - bw - ctx.dp(90); left -> (screenH * .6f).toInt(); else -> (screenH * .26f).toInt() }
+        return top..bottom.coerceAtLeast(top + 1)
+    }
+
+    private fun isLeft() = lp.x + bw / 2 < screenW / 2
+
     private fun snap() {
-        val x = if (lp.x + bw / 2 < screenW / 2) ctx.dp(6) else screenW - bw - ctx.dp(6)
-        animateTo(x, lp.y.coerceIn(ctx.dp(40), screenH - bw - ctx.dp(90)))
-        p.floatX = x; p.floatY = lp.y
+        val left = isLeft()
+        val x = if (left) ctx.dp(6) else screenW - bw - ctx.dp(6)
+        val y = lp.y.coerceIn(yRange(left))
+        animateTo(x, y)
+        p.floatX = x; p.floatY = y
     }
 
     /** Pindah ke (x, y). arc > 0 = lompat melengkung setinggi arc px. Gerak patah-patah biar kerasa pixel. */
@@ -233,13 +256,13 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
 
     private fun wake() {
         view.sleeping = false; view.invalidate()
-        view.removeCallbacks(idle); view.postDelayed(idle, 45_000)
+        h.removeCallbacks(rise); h.removeCallbacks(idle); h.postDelayed(idle, 45_000)
         schedule()
     }
 
     private fun schedule() {
-        view.removeCallbacks(patrol)
-        if (!p.reduceMotion) view.postDelayed(patrol, 6_000L + rnd.nextInt(9_000))
+        h.removeCallbacks(patrol)
+        if (!p.reduceMotion) h.postDelayed(patrol, 6_000L + rnd.nextInt(9_000))
     }
 
     /**
@@ -248,14 +271,14 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
      */
     private fun roam() {
         if (!attached || dragging || peek != 0 || menu != null || sayShown || view.sleeping || p.focusUntil > System.currentTimeMillis()) { schedule(); return }
-        val top = ctx.dp(40); val bottom = (screenH - bw - ctx.dp(90)).coerceAtLeast(top + 1)
-        val left = lp.x + bw / 2 < screenW / 2
+        val left = isLeft()
         if (rnd.nextInt(4) == 0) {
             val x = if (left) screenW - bw - ctx.dp(6) else ctx.dp(6)
             view.facing = if (left) 1 else -1
-            animateTo(x, lp.y, 700, arc = ctx.dp(90), steps = 10) { save() }
+            animateTo(x, lp.y.coerceIn(yRange(!left)), 700, arc = ctx.dp(90), steps = 10) { save() }
         } else {
-            val y = top + rnd.nextInt(bottom - top)
+            val r = yRange(left)
+            val y = r.first + rnd.nextInt(r.last - r.first)
             view.walking = true
             animateTo(lp.x, y, (kotlin.math.abs(y - lp.y) * 4L).coerceIn(400, 2600), steps = 24) { view.walking = false; save() }
         }
@@ -271,7 +294,7 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
         sayLp.x = if (left) lp.x + bw + ctx.dp(4) else lp.x - say.measuredWidth - ctx.dp(4)
         sayLp.y = lp.y + ctx.dp(14)
         if (sayShown) wm.updateViewLayout(say, sayLp) else { wm.addView(say, sayLp); sayShown = true }
-        view.removeCallbacks(unsay); view.postDelayed(unsay, 2600)
+        h.removeCallbacks(unsay); h.postDelayed(unsay, 2600)
     }
 
     private fun openMenu() {
@@ -299,12 +322,20 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
     private fun closeMenu() { menu?.let { wm.removeView(it) }; menu = null }
 
     /** heat: 0 tenang, 1 setengah jatah, 2 hampir habis, 3 lewat. */
-    fun show(mood: Mood, count: Int, mascot: Mascot, heat: Int) {
+    /** reel = lagi di TikTok/Shorts/IG. Maskot minggir dari tombol app itu. */
+    fun show(mood: Mood, count: Int, mascot: Mascot, heat: Int, reel: Boolean) {
         val prev = lastCount; lastCount = count
         view.mood = mood; view.count = count; view.heat = heat
-        if (!attached) { view.mascot = mascot; wm.addView(view, lp); attached = true; wake(); view.invalidate(); return }
+        if (reel != inReel) { inReel = reel; if (attached && lp.y !in yRange(isLeft())) snap() else if (!attached) lp.y = lp.y.coerceIn(yRange(isLeft())) }
+        if (!attached) {
+            val greet = mascot != view.mascot
+            view.mascot = mascot; wm.addView(view, lp); attached = true; wake(); view.invalidate()
+            if (greet) h.postDelayed({ if (attached) speak("${mascot.voice} ${line()}") }, 400)
+            return
+        }
         if (mascot != view.mascot) { puff(mascot); return }
         if (prev in 0 until count) {
+            wake()
             if (count / 10 > prev / 10) view.flashUntil = System.currentTimeMillis() + 1600
             if (heat == 2) shake() else hop(if (heat == 3) 22 else 8)
         }
@@ -323,12 +354,12 @@ class FloatingMascot(private val ctx: Context, private val p: Prefs, private val
     }
 
     fun hide() {
-        anim?.cancel(); view.walking = false; view.removeCallbacks(patrol)
+        anim?.cancel(); view.walking = false; h.removeCallbacks(patrol); h.removeCallbacks(rise)
         if (attached) { wm.removeView(view); attached = false }
         unsay.run(); hideTrash(); closeMenu()
     }
 
-    fun remove() = hide()
+    fun remove() { hide(); h.removeCallbacksAndMessages(null) }
 }
 
 /** Tombol yang harus ditahan 2 detik. Friksi kecil sebelum lanjut scroll. */
@@ -339,7 +370,7 @@ class HoldButton(ctx: Context, label: String, private val fg: Int, private val b
     private val paint = Paint().apply { color = bar; alpha = 130 }
 
     init {
-        text = label; gravity = Gravity.CENTER; textSize = 15f; setTextColor(fg)
+        text = label; gravity = Gravity.CENTER; textSize = 18f; setTextColor(fg)
         typeface = ResourcesCompat.getFont(ctx, R.font.jersey); setPadding(0, ctx.dp(10), 0, ctx.dp(10))
         background = box(Color.TRANSPARENT, fg, ctx.dp(2))
         contentDescription = "$label. Tahan dua detik"
@@ -397,13 +428,13 @@ class PauseCard(
         fun text(s: String, size: Float, face: android.graphics.Typeface?, color: Int = fg) = TextView(ctx).apply {
             text = s; textSize = size; typeface = face; setTextColor(color); gravity = Gravity.CENTER; setPadding(0, ctx.dp(4), 0, ctx.dp(4))
         }
-        col.addView(text(title, 21f, pix))
+        col.addView(text(title, 25f, pix))
         col.addView(text(sub, 13f, body, if (night) 0xFFA89A8C.toInt() else 0xFF7D6B5B.toInt()))
-        val breath = text("Tarik napas...", 15f, pix)
+        val breath = text("Tarik napas...", 18f, pix)
         col.addView(breath)
         val full = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = ctx.dp(10) }
         col.addView(TextView(ctx).apply {
-            text = if (allowContinue) "Udahan" else "Oke"; gravity = Gravity.CENTER; textSize = 15f; typeface = pix; setTextColor(0xFFFFF6E6.toInt())
+            text = if (allowContinue) "Udahan" else "Oke"; gravity = Gravity.CENTER; textSize = 18f; typeface = pix; setTextColor(0xFFFFF6E6.toInt())
             setPadding(0, ctx.dp(10), 0, ctx.dp(10)); background = box(red, if (night) 0xFF07060A.toInt() else 0xFF2B2118.toInt(), ctx.dp(2))
             setOnClickListener { onStop(); dismiss() }
         }, full)

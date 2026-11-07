@@ -113,6 +113,13 @@ class StatsTest {
         assertEquals(0, Stats.heat(10, 60)); assertEquals(1, Stats.heat(30, 60)); assertEquals(2, Stats.heat(48, 60)); assertEquals(3, Stats.heat(61, 60))
     }
 
+    @Test fun bobGetsFasterWithHeat() {
+        assertTrue(Bob.PERIOD.toList() == Bob.PERIOD.sortedDescending())
+        val calm = (0L until 1600L step 50).map { Bob.lift(it, 0, 0) }
+        assertEquals(-2f, calm.min(), 0f); assertEquals(0f, calm.max(), 0f)
+        assertTrue(Bob.lift(0, 3, 1) != Bob.lift(0, 3, 0)) // digit kedua telat seperempat gelombang
+    }
+
     @Test fun thumbMeters() {
         assertEquals("6 m", Stats.formatMeters(Stats.meters(42)))
         assertEquals("1,5 km", Stats.formatMeters(Stats.meters(10_000)))

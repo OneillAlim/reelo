@@ -24,12 +24,14 @@ Design prototype (screens, themes, mascots): https://claude.ai/artifact/Ckkk4Ghg
 ## Lampu dan kedip
 Satu skala "panas" (`Stats.heat`) dipakai di Beranda, maskot melayang, dan tiket:
 
-| heat | kondisi | lampu marquee | badge maskot melayang |
-|---|---|---|---|
-| 0 | < 50% jatah | kuning, diam | merah, diam |
-| 1 | 50–79% | kuning, kelip acak | kedip pelan (900 ms) |
-| 2 | 80–100% | oranye, nyala selang-seling | kedip oranye (500 ms) |
-| 3 | lewat jatah | merah, selang-seling + angka berdenyut merah | kedip merah (400 ms) |
+| heat | kondisi | lampu marquee | angka naik-turun (`Bob`) | badge maskot melayang |
+|---|---|---|---|---|
+| 0 | < 50% jatah | kuning, diam | pelan, 1,6 dtk, 2 dp | merah, diam |
+| 1 | 50–79% | kuning, kelip acak | 1,1 dtk, 3 dp | kedip pelan (900 ms) |
+| 2 | 80–100% | oranye, nyala selang-seling | 0,7 dtk, 4 dp | kedip oranye (500 ms) |
+| 3 | lewat jatah | merah, selang-seling + angka berdenyut merah | kenceng, 0,45 dtk, 5 dp | kedip merah (400 ms) |
+
+Angka naik-turun per digit dengan geser seperempat gelombang, jadi kelihatan kayak ombak. Badge di maskot melayang ikut naik-turun dengan aturan yang sama.
 
 Tiap nembus kelipatan 10 reels: lampu putih lari keliling rol dua putaran, angka kedip, maskot teriak (sekali per
 kelipatan per hari, dicatat di `Prefs.milestone`). Kedip paling cepat 2,5 kali per detik, biar aman buat yang sensitif

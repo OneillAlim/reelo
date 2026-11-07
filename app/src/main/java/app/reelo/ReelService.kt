@@ -213,7 +213,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         val app = App.of(fgPkg)
         val n = if (app != null) counts.getValue(app) else counts.values.sum()
         val limit = if (app != null) p.limit(app) else p.totalLimit
-        f.show(Stats.mood(n, limit), n, p.mascotFor(app), Stats.heat(n, limit))
+        f.show(Stats.mood(n, limit), n, p.mascotFor(app), Stats.heat(n, limit), reel = app != null)
     }
 
     private fun line(): String {

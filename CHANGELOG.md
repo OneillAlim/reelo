@@ -3,9 +3,45 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-07 · Dicek di HP + perbaikan
+
+Semua yang di entri sebelumnya ("Perlu dicek di HP") udah dicek di Xiaomi 14T (Android 15), Siang dan Malam:
+Beranda, Insight, Saya, Pengaturan, Tema, Lemari, maskot melayang di home screen dan TikTok, Pause Card, menu Coret 1.
+
+**Perbaikan dari hasil cek.**
+- **Font pixel kekecilan.** Jersey 15 lebih kecil dari Pixelify di sp yang sama. Ditambah konstanta `PX = 1.2f`
+  (`Theme.kt`), yang dikaliin di `Px`, `Lbl`, `Pill`, dan `Odometer`. Teks pixel di overlay (Pause Card, tombol tahan,
+  tong sampah) juga dinaikin.
+- **Bohlam mati nggak kontras.** Dulu warnanya krem terang (`p.hole`), sekarang `filmFg` 16% biar redup.
+- **Maskot nutupin tombol TikTok.** Di app reels, `FloatingMascot.yRange()` batasin tinggi maskot:
+  - sisi kanan cuma 10–26% layar (di atas kolom like/komentar/share);
+  - sisi kiri 10–60% (di atas caption).
+  Pas masuk app reels, maskot langsung minggir (`snap()`). Lompat ke seberang juga mendarat di rentang sisi tujuan.
+- **Maskot tidur selamanya.** Setelah tidur 45 detik dia nggak bangun lagi. Sekarang bangun sendiri 1,5–2,5 menit
+  kemudian, dan juga bangun tiap hitungan nambah.
+- **Maskot ketiduran pas lagi dipegang.** Timer tidur yang dipasang pakai `view.postDelayed` sebelum maskot dilepas
+  (misalnya pas Pause Card muncul) nggak bisa dibatalin lewat `view.removeCallbacks` selama view lepas dari window,
+  jadi tetap jalan. Semua timer `FloatingMascot` sekarang pakai `Handler` sendiri (`h`).
+- **Nggak nyapa kalau masuk app dari Reelo** (waktu itu maskotnya lagi disembunyiin). Sekarang nyapa juga pas
+  dipasang ulang dengan karakter yang beda.
+- **Baris Tema di Pengaturan** cuma bisa ditap di ikon ">" yang kecil. Sekarang seluruh barisnya.
+
+**Fitur baru (permintaan Bryan).** Angka naik-turun: `Bob.lift(t, heat, digit)` di `Stats.kt`. Pelan kalau masih
+dikit, makin kenceng dan makin tinggi kalau makin dekat jatah (tabel di README "Lampu dan kedip"). Dipakai di
+odometer Beranda (per digit, kayak ombak) dan badge maskot melayang. Tes: `StatsTest.bobGetsFasterWithHeat`.
+
+**Catatan dari data asli.** Ada 32 hitungan TikTok dalam satu menit (20.46). Setelah dicek di log, itu flick
+beneran: 17 reel beda dalam ~5 detik, tiap reel judul lagunya beda. Jadi tiap reel tetap dihitung, sesuai aturan
+"reel baru". Kalau nanti mau reel yang lewat di bawah ~1 detik nggak dihitung, tempatnya di `SwipeCounter.settle`
+(n > 1 dalam satu settle).
+
+**Cara ngetes overlay tanpa ganggu HP yang lagi dipakai.** Cek dulu app yang lagi di depan sebelum ngirim tap:
+`adb shell dumpsys activity activities | grep -m1 topResumedActivity`. Posisi maskot melayang bisa dibaca dari
+`adb shell dumpsys window windows | grep -m1 ty=ACCESSIBILITY_OVERLAY`, yaitu `mAttrs={(x,y)...`.
+
 ## 2026-11-07 · Maskot per app, maskot jalan-jalan, lampu marquee, font baru, Beranda baru
 
-> Status: build + unit test hijau. **Belum dicek tampilannya di HP** (HP lagi dipakai Bryan). Lihat bagian "Perlu dicek".
+> Status: udah dicek di HP, lihat entri "Dicek di HP + perbaikan" di atas.
 
 **Font.** Pixelify Sans diganti **Jersey 15** (OFL, Google Fonts), soalnya angka 5 di Pixelify kebaca kayak 8.
 File `res/font/pixelify.ttf` diganti nama jadi `res/font/jersey.ttf`, dan semua referensinya ikut diganti (`Theme.PixelFont`,

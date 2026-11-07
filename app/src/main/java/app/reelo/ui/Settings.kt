@@ -108,7 +108,9 @@ fun SettingsScreen(onBack: () -> Unit, onTema: () -> Unit) {
             Health(!hasInternet(ctx), if (hasInternet(ctx)) "Punya izin internet" else "Tanpa izin internet", "Dicek langsung dari manifest app ini.")
         }
         Card {
-            SettingRow("Tema", when (p.theme) { ThemeMode.AUTO -> "Ikut HP"; ThemeMode.DAY -> "Siang"; ThemeMode.NIGHT -> "Bioskop Malam" }) { Px(">", 18.sp, modifier = Modifier.clickable(onClick = onTema)) }
+            Box(Modifier.clickable(role = Role.Button, onClickLabel = "Ganti tema", onClick = onTema)) {
+                SettingRow("Tema", when (p.theme) { ThemeMode.AUTO -> "Ikut HP"; ThemeMode.DAY -> "Siang"; ThemeMode.NIGHT -> "Bioskop Malam" }) { Px(">", 18.sp) }
+            }
             Lbl("Maskot")
             Small("Tiap app punya penjaga sendiri. Maskot melayang ganti otomatis pas kamu pindah app.")
             (listOf<App?>(null) + App.entries).forEach { app ->
@@ -139,7 +141,7 @@ fun SettingsScreen(onBack: () -> Unit, onTema: () -> Unit) {
             if (asking) {
                 Small("Ketik HAPUS buat konfirmasi. Ini nggak bisa dibatalkan.")
                 BasicTextField(confirm, { confirm = it }, Modifier.fillMaxWidth().border(2.dp, pal.fg).padding(8.dp),
-                    textStyle = TextStyle(color = pal.fg, fontSize = 15.sp, fontFamily = PixelFont), singleLine = true, cursorBrush = SolidColor(pal.fg))
+                    textStyle = TextStyle(color = pal.fg, fontSize = 18.sp, fontFamily = PixelFont), singleLine = true, cursorBrush = SolidColor(pal.fg))
                 if (confirm.trim() == "HAPUS") Btn("Hapus sekarang") {
                     Db.get(ctx).clear(); p.clearAll(); confirm = ""; asking = false; Live.bump()
                 }

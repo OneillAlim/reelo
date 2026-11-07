@@ -70,6 +70,21 @@ enum class Challenge(val title: String, val hint: String) {
     companion object { const val ROL = 10; fun of(d: LocalDate) = entries[Math.floorMod(d.toEpochDay(), entries.size.toLong()).toInt()] }
 }
 
+/**
+ * Angka yang naik-turun pelan pas masih dikit, makin kenceng makin dekat jatah. Bentuknya patah 4 langkah biar kerasa pixel.
+ * Hasilnya dp ke atas (negatif = naik). i = urutan digit, biar tiap digit gelombangnya geser dikit kayak ombak.
+ */
+object Bob {
+    val PERIOD = longArrayOf(1600, 1100, 700, 450)
+    val AMP = floatArrayOf(2f, 3f, 4f, 5f)
+    private val WAVE = floatArrayOf(0f, .5f, 1f, .5f)
+    fun lift(t: Long, heat: Int, i: Int): Float {
+        val h = heat.coerceIn(0, 3); val per = PERIOD[h]
+        val ph = ((t % per) * 4 / per + i) % 4
+        return -AMP[h] * WAVE[ph.toInt()]
+    }
+}
+
 object Stats {
     fun mood(count: Int, limit: Int): Mood {
         val r = count.toDouble() / limit.coerceAtLeast(1)

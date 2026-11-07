@@ -68,6 +68,7 @@ import app.reelo.LocalReduce
 import app.reelo.Mascot
 import app.reelo.Mood
 import app.reelo.PixelFont
+import app.reelo.PX
 import app.reelo.Prefs
 import app.reelo.Sprite
 import kotlinx.coroutines.delay
@@ -89,14 +90,14 @@ fun Txt(text: String, size: TextUnit = 13.sp, color: Color = LocalPal.current.fg
 
 @Composable
 fun Px(text: String, size: TextUnit = 15.sp, color: Color = LocalPal.current.fg, modifier: Modifier = Modifier, align: TextAlign? = null) =
-    BasicText(text, modifier, TextStyle(color = color, fontSize = size, fontFamily = PixelFont, fontWeight = FontWeight.SemiBold, lineHeight = size * 1.15f, textAlign = align ?: TextAlign.Unspecified))
+    BasicText(text, modifier, TextStyle(color = color, fontSize = size * PX, fontFamily = PixelFont, fontWeight = FontWeight.SemiBold, lineHeight = size * PX * 1.15f, textAlign = align ?: TextAlign.Unspecified))
 
 @Composable
 fun Small(text: String, modifier: Modifier = Modifier, color: Color = LocalPal.current.muted) = Txt(text, 11.5.sp, color, modifier = modifier)
 
 @Composable
 fun Lbl(text: String, color: Color = LocalPal.current.muted) =
-    BasicText(text.uppercase(), style = TextStyle(color = color, fontSize = 10.5.sp, fontFamily = PixelFont, letterSpacing = 1.5.sp))
+    BasicText(text.uppercase(), style = TextStyle(color = color, fontSize = 10.5.sp * PX, fontFamily = PixelFont, letterSpacing = 1.2.sp))
 
 @Composable
 fun Big(text: String, size: TextUnit = 22.sp, color: Color = LocalPal.current.fg) = Px(text, size, color)
@@ -177,7 +178,7 @@ fun Btn(text: String, modifier: Modifier = Modifier.fillMaxWidth(), ghost: Boole
 @Composable
 fun Pill(text: String, color: Color, modifier: Modifier = Modifier) =
     Box(modifier.border(2.dp, color).padding(horizontal = 7.dp, vertical = 2.dp)) {
-        BasicText(text, style = TextStyle(color = color, fontSize = 10.sp, fontFamily = PixelFont, fontWeight = FontWeight.SemiBold, letterSpacing = .6.sp))
+        BasicText(text, style = TextStyle(color = color, fontSize = 10.sp * PX, fontFamily = PixelFont, fontWeight = FontWeight.SemiBold, letterSpacing = .6.sp))
     }
 
 @Composable
@@ -240,15 +241,16 @@ fun MascotView(mood: Mood, px: Dp, modifier: Modifier = Modifier, mascot: Mascot
 
 /** Angka yang berputar per digit kayak penghitung tiket. */
 @Composable
-fun Odometer(value: Int, size: TextUnit, color: Color, glow: Boolean = false) {
+fun Odometer(value: Int, base: TextUnit, color: Color, glow: Boolean = false, lift: (Int) -> Float = { 0f }) {
+    val size = base * PX
     val h = with(LocalDensity.current) { size.toDp() }
     val style = TextStyle(fontSize = size, lineHeight = size, fontFamily = PixelFont, fontWeight = FontWeight.SemiBold, color = color,
         lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
         shadow = if (glow) Shadow(Color(0x99FFC458), blurRadius = 28f) else null)
     Row {
-        value.toString().forEach { ch ->
+        value.toString().forEachIndexed { i, ch ->
             val a by animateFloatAsState((ch - '0').toFloat(), tween(450, easing = steps(6)), label = "odo")
-            Box(Modifier.height(h).clipToBounds()) {
+            Box(Modifier.offset { IntOffset(0, lift(i).dp.roundToPx()) }.height(h).clipToBounds()) {
                 Column(Modifier.wrapContentHeight(Alignment.Top, unbounded = true).offset { IntOffset(0, (-a * h.toPx()).roundToInt()) }) {
                     for (d in 0..9) BasicText("$d", Modifier.height(h), style)
                 }
@@ -326,7 +328,7 @@ fun Modifier.marquee(p: app.reelo.Pal, lit: Float, heat: Int, t: Long, chase: Fl
     val head = if (chase >= 0f) chase * cols * 4 else -99f // dua putaran keliling (atas lalu bawah balik)
     for (row in 0..1) for (i in 0 until cols) {
         val x = e + i * w * 2; val y = if (row == 0) e else size.height - e - hh
-        var c = if (i < on) base else p.hole
+        var c = if (i < on) base else p.filmFg.copy(alpha = .16f) // bohlam mati: redup biar yang nyala kerasa nyala
         if (i < on && per > 0) {
             val k = t / per
             val dim = when (heat) { 1 -> (i * 7 + row * 3 + k) % 5 == 0L; else -> (i + row + k) % 2 == 0L }
@@ -336,7 +338,7 @@ fun Modifier.marquee(p: app.reelo.Pal, lit: Float, heat: Int, t: Long, chase: Fl
         val d = ((head - pos) % (2 * cols) + 2 * cols) % (2 * cols)
         if (head > -99f && d < 3f) c = Cream.copy(alpha = 1f - d / 4f)
         drawRect(c, Offset(x, y), Size(w, hh))
-        if (p.night && c != p.hole) drawRect(c.copy(alpha = .25f), Offset(x - 2.dp.toPx(), y - 2.dp.toPx()), Size(w + 4.dp.toPx(), hh + 4.dp.toPx()))
+        if (p.night && i < on) drawRect(c.copy(alpha = .25f), Offset(x - 2.dp.toPx(), y - 2.dp.toPx()), Size(w + 4.dp.toPx(), hh + 4.dp.toPx()))
     }
 }
 

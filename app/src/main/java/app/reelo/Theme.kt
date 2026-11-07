@@ -30,6 +30,8 @@ val Cream = Color(0xFFFFF6E6)
 val LocalPal = staticCompositionLocalOf { Day }
 val LocalReduce = staticCompositionLocalOf { false }
 
+/** Jersey 15 lebih kecil dari Pixelify di ukuran sp yang sama; semua teks pixel dikali ini. */
+const val PX = 1.2f
 val PixelFont = FontFamily(Font(R.font.jersey, FontWeight.SemiBold))
 val BodyFont = FontFamily(Font(R.font.rubik, FontWeight.Normal), Font(R.font.rubik_semibold, FontWeight.SemiBold))
 

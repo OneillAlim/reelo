@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.graphicsLayer
+import app.reelo.Bob
 import app.reelo.Challenge
 import app.reelo.Cream
 import app.reelo.LocalReduce
@@ -149,7 +150,7 @@ fun Home(onApp: (App) -> Unit, onRecap: () -> Unit) {
         n > limit -> "${dayName(date, today)} tembus $n. Hari ini pasti bisa lebih santai."
         else -> "${dayName(date, today)}: $n reels, masih di bawah jatah."
     }
-    val t = ticker(on = heat > 0 || chase.value >= 0f)
+    val t = ticker()
 
     Box(Modifier.fillMaxSize()) {
         Screen {
@@ -196,7 +197,7 @@ fun Home(onApp: (App) -> Unit, onRecap: () -> Unit) {
                     else -> pal.mus
                 }
                 Box(Modifier.clickable(onClickLabel = "Putar ulang angka") { spin++ }) {
-                    Odometer(if (spin > 0 && spinning(spin)) 0 else n, 60.sp, numCol, glow = pal.night || heat >= 2)
+                    Odometer(if (spin > 0 && spinning(spin)) 0 else n, 64.sp, numCol, glow = pal.night || heat >= 2) { i -> if (di == 0 && n > 0) Bob.lift(t, heat, i) else 0f }
                 }
                 Frames(n, limit)
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
