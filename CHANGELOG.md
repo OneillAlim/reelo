@@ -3,6 +3,85 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-08 · Jaga Api: jadwal 00.00 yang konsisten, notif pengingat, tombol 🔥 di widget
+
+**Kenapa.** Bryan nanya apakah auto kirim tiap 00.00 udah jalan, dan minta:
+- jangan sampai lupa streak (ada notif pengingat);
+- widget bisa diketuk buat langsung nyalain;
+- semuanya konsisten.
+
+Pas dicek, ada 4 lubang:
+1. **Timer 00.00 pakai `Handler.postDelayed`.** Jamnya (`uptimeMillis`) berhenti waktu HP tidur, jadi timer yang
+   dipasang pagi bisa baru bunyi jam 05.00. Kalau HP udah kebuka sebelum 00.00 dan dipakai lewat tengah malam, nggak
+   ada yang memicu.
+2. **Satu teman gagal, hari tetap ditandai selesai.** TikTok gagal kebuka juga nggak dicoba ulang.
+3. **Nggak ada pengingat** kalau HP terkunci semalaman atau service dimatiin HyperOS.
+4. **Widget nggak tahu soal api.**
+
+**Perubahan.**
+- **`FlameAlarm.kt` (baru).**
+  - Isinya `BroadcastReceiver` non-exported dengan aksi `TICK` (alarm) dan `NOW` (widget + tombol notif).
+  - `schedule()` masang satu alarm `setExactAndAllowWhileIdle(RTC_WAKEUP)` ke `Flame.nextAlarm()`. Cadangannya
+    `setAndAllowWhileIdle` kalau alarm tepat nggak diizinkan.
+  - Dipasang ulang tiap alarm bunyi, tiap service nyambung, tiap app dibuka (`MainActivity.onResume`), tiap
+    `flameOn`/`flameAll` berubah, dan tiap selesai jalan.
+  - **Tick, kalau belum beres hari ini:**
+    - service mati: notif ke Setelan Aksesibilitas;
+    - HP terkunci atau layar mati: notif "🔥 N api nunggu kamu";
+    - selain itu: `flameMaybe()`.
+  - **Tick, kalau udah beres tapi masih ada yang belum** (jam ≥ 20): notif pengingat + tombol "Nyalain sekarang".
+    Tombolnya `setAuthenticationRequired`, jadi minta buka kunci dulu.
+  - Channel notif baru **"Jaga Api"** (`flame`, prioritas tinggi). Hasil kirim juga pindah ke channel ini.
+- **`ReelService`:**
+  - `armMidnight`/Handler `midnight` dihapus. `USER_PRESENT` tetap ada.
+  - Lagi telepon atau Pause Card nongol: alarm 2 menit lagi (`flameLater`), bukan dilewati.
+  - "Tunda 1 jam" sekarang juga masang alarm.
+- **Coba ulang (`flameAfter`):**
+  - Hari ditandai beres (`flameLastRun`) cuma kalau nol gagal, atau kamu yang pencet Batal.
+  - Gagal (termasuk TikTok/Inbox nggak kebuka): `flameTries` naik, coba lagi +10 lalu +20 menit
+    (`Flame.retryAt`). Sasarannya cuma yang belum `sentOk`.
+  - Setelah 3x: hari ditutup, notif "Masih ada yang gagal" + tombol **Coba lagi**.
+  - Notif hasil nyebut jam coba ulangnya.
+- **`flameNow(only, again)`:**
+  - widget/notif pakai `again = false`, jadi nggak ngirim dobel;
+  - hasil `2` = semua udah aman (cuma toast);
+  - `-1` juga kalau kartu Jaga Api lagi tampil.
+- **Daftar teman ikut segar waktu sapu.** `TikTokBot.sweep(saw = …)` ngelaporin angka api tiap baris yang kebaca.
+  Teman yang apinya padam sejak pindai terakhir jadi 0, jadi angka di widget nggak nyangkut.
+- **Widget:**
+  - pil 🔥 (`w_flame`) di small/wide (pojok kiri atas) dan marquee (sebelah "HARI INI");
+  - isinya jumlah yang belum aman, "aman", atau "off" (`WidgetArt.flame`, api pixel `Flame.ICON` yang dipindah dari
+    `ui/Api.kt`);
+  - ketuk = aksi `NOW`. Kalau Jaga Api mati, ketuk = buka app.
+- **`Db.flamePending(day, all)`:** teman berapi yang belum kebagian hari ini.
+- **Layar Jaga Api:**
+  - Kartu **"Siap jaga api?"** ngecek: Aksesibilitas, notif, baterai Tanpa batasan, alarm tepat waktu, TikTok
+    terpasang, udah dipindai, ada pesan aktif. Yang merah bisa diketuk ke setelannya. Kalau semua hijau, cuma satu
+    baris.
+  - Status nampilin jam coba ulang.
+  - Kartu riwayat nampilin jam mulai.
+  - Tombol debug diganti **"simulasi 00.00 (1 menit lagi)"**.
+- **Manifest:**
+  - `USE_EXACT_ALARM` (otomatis diberi buat sideload; kalau ke Play Store ganti `SCHEDULE_EXACT_ALARM`);
+  - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`;
+  - receiver `FlameAlarm`.
+- `Settings.Health` jadi public biar dipakai ulang. `Flame.untilMidnight` dihapus karena udah nggak dipakai.
+
+**Tes.**
+- `flameAlarmPicksNearest`: 00.00:30, 20.00, 23.00, coba ulang lebih dekat, coba ulang yang udah lewat diabaikan.
+- `flameRetryStopsAtThree`.
+- `./gradlew testDebugUnitTest assembleDebug` hijau.
+
+**Belum dites di HP** (HP lagi dipakai Bryan). Urutan tes di `README.md` bagian "Jaga Api: kapan jalan":
+- simulasi 00.00 dengan HP kebuka;
+- simulasi 00.00 dengan HP terkunci, terus dibuka;
+- `dumpsys alarm` setelah layar mati;
+- tombol widget dan tombol notif;
+- service dimatiin.
+
+Perlu dilihat juga apakah HyperOS ngeblok TikTok kebuka dari latar (izin "Tampilkan jendela pop-up saat berjalan di
+latar belakang"). Kalau iya, kartu siap perlu cek itu juga.
+
 ## 2026-11-07 · Jaga Api: kirim 👉 ke semua dites di HP, grup chat dibenerin
 
 **Hasil di HP Bryan.** 23 dari 24 teman berapi dapat 👉, termasuk grup chat. Kecepatan mode sapu sekitar **3 detik per

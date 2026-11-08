@@ -22,6 +22,8 @@ Design prototype (screens, themes, mascots): https://claude.ai/artifact/Ckkk4Ghg
 - Jaga Api TikTok: kirim pesan otomatis ke teman yang udah punya streak, tiap 00.00 (atau pas HP pertama dibuka).
   Pesan buatan sendiri diacak per teman, ada hitung mundur 5 detik + Tunda, dan riwayat. Selector TikTok ada di
   `TikTokUi` (`TikTokBot.kt`). Melanggar aturan otomasi TikTok, jadi pakai dengan risiko sendiri.
+  Jadwalnya lewat AlarmManager (`FlameAlarm.kt`, tetap tepat walau HP tidur). Ada coba ulang kalau gagal, notif
+  "buka HP" kalau terkunci, pengingat 20.00/23.00, dan tombol 🔥 di widget buat langsung nyalain.
 - Tema Siang / Bioskop Malam / Ikut HP, otomatis gelap saat Jam Malam
 - Cek kesehatan (service, izin, optimasi baterai per merek), ekspor CSV, hapus data
 - Tanpa izin INTERNET. Semua data cuma ada di HP. Teks di layar reel (nama akun, caption) cuma dipakai buat sidik jari
@@ -94,3 +96,30 @@ Dites ulang di Xiaomi 14T (HyperOS, Android 15, 1220x2712), 7 Nov 2026: id yang 
 
 Di HyperOS/MIUI, nyalakan **Mulai otomatis** buat Reelo. Kalau nggak, sistem bisa matiin penghitungnya diam-diam.
 Beranda bakal nampilin peringatan kalau itu kejadian.
+
+## Jaga Api: kapan jalan
+Semua jadwal ada di `FlameAlarm.kt`. Cuma ada 1 alarm terpasang, yaitu waktu terdekat dari `Flame.nextAlarm()`:
+- 00.00:30;
+- jadwal coba ulang;
+- pengingat 20.00 dan 23.00.
+
+| Kejadian | Yang terjadi |
+|---|---|
+| 00.00, HP kebuka | Langsung jalan |
+| 00.00, HP terkunci | Notif "🔥 N api nunggu kamu". Jalan pas HP dibuka (`USER_PRESENT`). Android nggak ngizinin app buka kunci |
+| 00.00, lagi telepon / Pause Card muncul | Dicoba lagi 2 menit kemudian |
+| Ada yang gagal / TikTok nggak kebuka | Coba ulang +10 dan +20 menit, cuma ke yang belum kebagian. Maksimal 3x, abis itu notif + tombol "Coba lagi" |
+| 20.00 / 23.00 masih ada yang belum | Notif pengingat + tombol "Nyalain sekarang" |
+| Service Aksesibilitas mati | Notif "Reelo lagi mati" + tombol ke Setelan Aksesibilitas |
+| Ketuk 🔥 di widget | Kirim ke yang belum kebagian hari ini; kalau semua udah, cuma toast |
+
+**Izin.**
+- Alarm pakai `USE_EXACT_ALARM`, yang otomatis diberi buat app yang di-install sendiri. Kalau app ini masuk Play
+  Store, ganti ke `SCHEDULE_EXACT_ALARM`: user harus ngizinin, dan kartu "Siap jaga api?" udah ngecek itu.
+- Di HyperOS, baterai Reelo harus **Tanpa batasan** + **Mulai otomatis**.
+
+**Ngetes tanpa nunggu tengah malam.** Di build debug, layar Jaga Api punya tombol "debug: simulasi 00.00 (1 menit
+lagi)". Cek alarm yang kepasang:
+```
+adb shell dumpsys alarm | grep -A3 app.reelo
+```

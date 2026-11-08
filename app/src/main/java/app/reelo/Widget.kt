@@ -57,6 +57,16 @@ object Widgets {
         val r = 16 * dm.density
         val open = ReelService.openApp(ctx, false)
         val left = if (total > limit) "lewat ${total - limit}" else "sisa ${limit - total}"
+        val pend = if (p.flameOn) Db.get(ctx).flamePending(Flame.day(System.currentTimeMillis()), p.flameAll) else 0
+        val flameBmp = WidgetArt.flame(ctx, when { !p.flameOn -> "off"; pend == 0 -> "aman"; else -> "$pend" }, p.flameOn, 2 * dm.density)
+        // ketuk api: langsung kirim ke yang belum kebagian. Jaga Api mati = buka app aja.
+        val flameTap = if (p.flameOn) FlameAlarm.pending(ctx, FlameAlarm.NOW) else open
+        val flameDesc = when { !p.flameOn -> "Jaga Api mati. Ketuk buat buka Reelo."; pend == 0 -> "Api TikTok hari ini aman."; else -> "$pend api TikTok belum aman. Ketuk buat nyalain." }
+        fun RemoteViews.flame() {
+            setImageViewBitmap(R.id.w_flame, flameBmp)
+            setOnClickPendingIntent(R.id.w_flame, flameTap)
+            setContentDescription(R.id.w_flame, flameDesc)
+        }
         fun scale(dp: Int) = (dp * dm.density / (Sprite.N + 2)).toInt().coerceAtLeast(2)
 
         /** Ukuran widget dalam px dari opsi launcher (portrait: lebar minimum, tinggi maksimum). */
@@ -84,6 +94,7 @@ object Widgets {
             ))
             setOnClickPendingIntent(R.id.w_root, open)
             setContentDescription(R.id.w_root, "Reelo: $total reels hari ini, $left. Gaya ${style.label}.")
+            flame()
         }
 
         if (small.isNotEmpty()) {
@@ -139,6 +150,7 @@ object Widgets {
                     setImageViewBitmap(R.id.w_left, WidgetArt.label(ctx, "$left\ndari $limit", 16f, 0xFFF6E2B5.toInt()))
                     setOnClickPendingIntent(R.id.w_root, open)
                     setContentDescription(R.id.w_root, "Reelo: $total reels hari ini, $left dari $limit.")
+                    flame()
                 })
             }
         }

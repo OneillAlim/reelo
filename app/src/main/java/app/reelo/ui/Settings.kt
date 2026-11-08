@@ -68,7 +68,7 @@ fun hasInternet(ctx: Context) = ctx.packageManager.getPackageInfo(ctx.packageNam
 fun notifOk(ctx: Context) = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
 @Composable
-private fun Health(ok: Boolean?, title: String, sub: String? = null, action: String? = null, onAction: () -> Unit = {}) {
+fun Health(ok: Boolean?, title: String, sub: String? = null, action: String? = null, onAction: () -> Unit = {}) {
     val pal = LocalPal.current
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         Box(Modifier.padding(top = 4.dp).size(10.dp).background(when (ok) { true -> pal.teal; false -> pal.red; null -> pal.mus }))

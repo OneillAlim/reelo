@@ -60,10 +60,12 @@ class TikTokBot(private val svc: AccessibilityService) {
      * jadi cepat (sekitar 2-3 detik per teman). Chat yang barusan dikirim naik ke atas Inbox, makanya tiap kali
      * daftar dibaca ulang dan dipilih baris pertama yang belum kebagian.
      * [each]: nama, angka api, id pesan, note (null = terkirim). [total] cuma perkiraan buat progres.
+     * [saw]: tiap baris yang kebaca (nama, angka api), biar daftar teman ikut segar tanpa pindai ulang.
      */
     fun sweep(
         want: (String) -> Boolean, pick: (String, Int) -> Pair<Long, String>?, total: Int, back: String?,
         progress: (Int, Int, String) -> Unit, each: (String, Int, Long?, String?) -> Unit, done: (Boolean) -> Unit,
+        saw: (String, Int) -> Unit = { _, _ -> },
     ) {
         if (running) return
         job = scope.launch {
@@ -85,6 +87,7 @@ class TikTokBot(private val svc: AccessibilityService) {
                         lost = 0
                         val rs = rows(r)
                         seen += rs.map { it.name }
+                        rs.forEach { saw(it.name, it.streak) }
                         val next = rs.firstOrNull { it.streak > 0 && it.name !in handled && want(it.name) }
                         if (next == null) log("sweep page=$pages rows=${rs.size} streak=${rs.count { it.streak > 0 }} target=${rs.count { it.streak > 0 && want(it.name) }} handled=${rs.count { it.name in handled }}")
                         if (next != null) {

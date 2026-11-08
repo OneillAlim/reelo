@@ -33,16 +33,12 @@ import app.reelo.Mood
 import app.reelo.Msg
 import app.reelo.ReelService
 
-private val FLAME = listOf(
-    listOf("...#...", "..##...", "..###..", ".#####.", ".##.##.", "##...##", ".#####."),
-    listOf("....#..", "...##..", "..###..", ".#####.", ".##.##.", "##...##", ".#####."),
-)
 
 /** Api pixel yang goyang 2 frame. */
 @Composable
 fun FlameIcon(size: androidx.compose.ui.unit.Dp = 18.dp, color: androidx.compose.ui.graphics.Color = LocalPal.current.red) {
     val t = ticker()
-    PixelIcon(FLAME[((t / 350) % 2).toInt()], color, size)
+    PixelIcon(app.reelo.Flame.ICON[((t / 350) % 2).toInt()], color, size)
 }
 
 private fun svc() = ReelService.inst
@@ -102,12 +98,14 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
                         live.isEmpty() -> "Aku buka Inbox TikTok sebentar buat nyari teman yang punya api."
                         activeMsgs == 0 -> "Minimal satu pesan, nanti aku acak per teman."
                         !p.flameOn -> "Nyalain biar jalan sendiri tiap malam."
+                        p.flameRetryAt > System.currentTimeMillis() -> "Ada yang gagal, aku coba lagi jam ${hhmm(p.flameRetryAt)}."
                         doneToday -> "Jalan lagi besok jam 00.00, atau pas HP pertama kamu buka."
                         else -> "Jalan jam 00.00, atau pas HP pertama kamu buka setelahnya."
                     }, 12.sp, pal.filmFg)
                 }
             }
         }
+        if (p.flameOn) Ready(activeMsgs > 0, live.isNotEmpty(), onMsgs, onFriends)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Card(Modifier.weight(1f), onClick = onFriends) {
                 Lbl("Teman")
@@ -123,7 +121,7 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Lbl(if (lastDay == today) "Hari ini" else "Terakhir · $lastDay")
-                    Txt("$ok terkirim" + if (day.size > ok) " · ${day.size - ok} gagal" else "", bold = true)
+                    Txt("$ok terkirim" + (if (day.size > ok) " · ${day.size - ok} gagal" else "") + " · mulai ${hhmm(day.minOf { it.ts })}", bold = true)
                 }
                 Px(">", 20.sp)
             }
@@ -164,7 +162,48 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
         }
         Small("Streak butuh dua arah: Reelo ngisi sisimu, temanmu tetap harus bales.")
         if (ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
-            Pill("debug: hitung mundur sekarang", pal.muted, Modifier.clickable { svc()?.flameMaybe(force = true) })
+            Pill("debug: simulasi 00.00 (1 menit lagi)", pal.muted, Modifier.clickable {
+                p.flameLastRun = ""; p.flameTries = ""; p.flameRetryAt = System.currentTimeMillis() + 60_000
+                app.reelo.FlameAlarm.schedule(ctx); info = "Alarm dipasang, jalan sekitar 1 menit lagi. Boleh kunci HP buat ngetes."
+            })
+    }
+}
+
+private fun hhmm(ts: Long) = java.time.Instant.ofEpochMilli(ts).atZone(app.reelo.Days.zone).toLocalTime().toString().take(5).replace(':', '.')
+
+/**
+ * Semua yang dibutuhin biar jalan sendiri tiap 00.00. Dicek langsung tiap layar dibuka; yang merah bisa diketuk.
+ * Kalau semua hijau cuma satu baris.
+ */
+@Composable
+private fun Ready(hasMsg: Boolean, scanned: Boolean, onMsgs: () -> Unit, onFriends: () -> Unit) {
+    val ctx = LocalContext.current
+    Live.v
+    val pkg = ctx.packageName
+    val checks = listOf(
+        Check(ReelService.isOn(ctx), "Penghitung Reelo (Aksesibilitas) nyala", "Nyalakan") { open(ctx, android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS) },
+        Check(notifOk(ctx), "Notifikasi diizinkan, biar bisa ngingetin", "Izinkan") {
+            runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, pkg).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        },
+        Check(ctx.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(pkg), "Baterai: Tanpa batasan", "Atur") {
+            runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:$pkg")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                .onFailure { open(ctx, android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS) }
+        },
+        Check(app.reelo.FlameAlarm.exact(ctx), "Alarm tepat waktu jam 00.00", "Izinkan") {
+            runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:$pkg")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        },
+        Check(app.reelo.TikTokUi.pkg(ctx) != null, "TikTok terpasang", null) {},
+        Check(scanned, "Daftar teman udah dipindai", "Pindai", onFriends),
+        Check(hasMsg, "Ada pesan aktif", "Tulis", onMsgs),
+    )
+    val bad = checks.filter { !it.ok }
+    Card {
+        if (bad.isEmpty()) {
+            Health(true, "Siap jaga api", "Jalan sendiri tiap 00.00. Kalau HP terkunci, aku kasih notif dan jalan pas kamu buka. Kalau ada yang gagal aku coba lagi, dan jam 20.00 sama 23.00 aku ingetin.")
+            return@Card
+        }
+        Lbl("Belum siap jalan sendiri")
+        bad.forEach { Health(false, it.title, null, it.action, it.go) }
     }
 }
 
@@ -329,3 +368,5 @@ fun ApiLog(onBack: () -> Unit) {
         }
     }
 }
+
+private class Check(val ok: Boolean, val title: String, val action: String?, val go: () -> Unit)

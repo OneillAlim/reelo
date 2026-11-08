@@ -11,6 +11,11 @@ data class Msg(val id: Long, val text: String, val on: Boolean)
 /** Logika Jaga Api yang nggak butuh Android, biar bisa dites. */
 object Flame {
     const val MAX_FRIENDS = 40
+    /** Api pixel 7x7, 2 frame (goyang). Dipakai di app dan di tombol api widget. */
+    val ICON = listOf(
+        listOf("...#...", "..##...", "..###..", ".#####.", ".##.##.", "##...##", ".#####."),
+        listOf("....#..", "...##..", "..###..", ".#####.", ".##.##.", "##...##", ".#####."),
+    )
     const val MAX_LEN = 200
     private val NUMBER = Regex("""^\d{1,5}$""")
     private val RESTORE = Regex("""(?i)(restore|pulihkan)\D*(\d+)""")
@@ -49,6 +54,28 @@ object Flame {
 
     fun due(lastRun: String, now: Long) = lastRun != day(now).toString()
 
-    /** ms sampai 00.00 berikutnya. */
-    fun untilMidnight(now: Long): Long = day(now).plusDays(1).atStartOfDay(Days.zone).toInstant().toEpochMilli() - now
+    /** Jam pengingat kalau masih ada api yang belum aman. */
+    val REMIND = intArrayOf(20, 23)
+    const val MAX_TRIES = 3
+    private const val RUN_AT_S = 30L // 00.00:30, biar pasti udah ganti hari
+
+    /** Alarm berikutnya: 00.00:30, jam pengingat, atau jadwal coba ulang ([retryAt], 0 = nggak ada). */
+    fun nextAlarm(now: Long, retryAt: Long): Long {
+        val t = day(now)
+        val c = buildList {
+            for (d in listOf(t, t.plusDays(1))) {
+                val s = d.atStartOfDay(Days.zone)
+                add(s.plusSeconds(RUN_AT_S).toInstant().toEpochMilli())
+                REMIND.forEach { add(s.plusHours(it.toLong()).toInstant().toEpochMilli()) }
+            }
+            if (retryAt > 0) add(retryAt)
+        }
+        return c.filter { it > now }.min()
+    }
+
+    /** Setelah percobaan ke-[tries] gagal: kapan coba lagi (+10, +20 menit), null = udahan buat hari ini. */
+    fun retryAt(tries: Int, now: Long): Long? = if (tries >= MAX_TRIES) null else now + 10 * 60_000L * tries
+
+    /** Prefs nyimpen "hari|jumlah"; hari lain = 0. */
+    fun tries(s: String, day: LocalDate): Int = s.split('|').takeIf { it.size == 2 && it[0] == day.toString() }?.get(1)?.toIntOrNull() ?: 0
 }

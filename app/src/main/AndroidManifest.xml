@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Jaga Api: alarm 00.00 tepat waktu walau HP tidur. Otomatis diberi; kalau suatu saat masuk Play Store, ganti ke SCHEDULE_EXACT_ALARM -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Jaga Api buka TikTok lewat launch intent; Android 11+ butuh ini biar package-nya kelihatan -->
     <queries>
@@ -52,6 +55,8 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_marquee" />
         </receiver>
+
+        <receiver android:name=".FlameAlarm" android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

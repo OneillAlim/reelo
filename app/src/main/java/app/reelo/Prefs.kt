@@ -72,6 +72,10 @@ class Prefs private constructor(val sp: SharedPreferences) {
     var flameSnoozeUntil by long(0)
     /** Tanggal (hari api, ganti jam 00.00) terakhir Jaga Api selesai jalan. */
     var flameLastRun by str("")
+    /** "tanggal|jumlah percobaan otomatis yang gagal" hari itu. */
+    var flameTries by str("")
+    /** Coba ulang otomatis paling cepat jam segini (ms). 0 = nggak ada. */
+    var flameRetryAt by long(0)
     var flameScanTs by long(0)
     /** Tanggal terakhir konfeti tantangan diputar. */
     var cheered by str("")

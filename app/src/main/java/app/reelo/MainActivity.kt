@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
         Thread {
             Repo.refreshGame(ctx)
             Widgets.update(ctx)
+            FlameAlarm.schedule(ctx)
             runOnUiThread { Live.bump() }
         }.start()
     }

@@ -156,7 +156,31 @@ class StatsTest {
         assertEquals(LocalDate.parse("2026-11-08"), Flame.day(afterMidnight))
         assertFalse(Flame.due("2026-11-07", beforeMidnight))
         assertTrue(Flame.due("2026-11-07", afterMidnight))
-        assertEquals(60_000L, Flame.untilMidnight(beforeMidnight))
+    }
+
+    @Test fun flameAlarmPicksNearest() {
+        val d = "2026-11-08"
+        // malam sebelum 00.00: 00.00:30 besok
+        assertEquals(at("2026-11-09", 0, 0) + 30_000, Flame.nextAlarm(at(d, 23, 30), 0))
+        // siang: pengingat 20.00 duluan
+        assertEquals(at(d, 20, 0), Flame.nextAlarm(at(d, 13, 0), 0))
+        assertEquals(at(d, 23, 0), Flame.nextAlarm(at(d, 20, 0), 0))
+        // pas 00.00:10: masih hari ini 00.00:30
+        assertEquals(at(d, 0, 0) + 30_000, Flame.nextAlarm(at(d, 0, 0) + 10_000, 0))
+        // coba ulang 00.20 lebih dekat dari 20.00
+        assertEquals(at(d, 0, 20), Flame.nextAlarm(at(d, 0, 10), at(d, 0, 20)))
+        // coba ulang yang udah lewat diabaikan
+        assertEquals(at(d, 20, 0), Flame.nextAlarm(at(d, 1, 0), at(d, 0, 20)))
+    }
+
+    @Test fun flameRetryStopsAtThree() {
+        val now = at("2026-11-08", 0, 1)
+        assertEquals(now + 10 * 60_000, Flame.retryAt(1, now))
+        assertEquals(now + 20 * 60_000, Flame.retryAt(2, now))
+        assertEquals(null, Flame.retryAt(3, now))
+        assertEquals(2, Flame.tries("2026-11-08|2", LocalDate.parse("2026-11-08")))
+        assertEquals(0, Flame.tries("2026-11-07|2", LocalDate.parse("2026-11-08")))
+        assertEquals(0, Flame.tries("", LocalDate.parse("2026-11-08")))
     }
 
     @Test fun thumbMeters() {

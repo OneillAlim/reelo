@@ -53,7 +53,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         running = true
         inst = this
         androidx.core.content.ContextCompat.registerReceiver(this, unlock, android.content.IntentFilter(Intent.ACTION_USER_PRESENT), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
-        armMidnight()
+        FlameAlarm.schedule(this)
         Live.bump()
     }
 
@@ -73,6 +73,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
 
     override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
         if (key in setOf("floatOn", "snoozeUntil", "mascotName", "mascotTiktok", "mascotShorts", "mascotIg", "accName", "reduceMotion")) refreshFloat()
+        if (key == "flameOn" || key == "flameAll") { FlameAlarm.schedule(this); Widgets.update(this) }
     }
 
     override fun onAccessibilityEvent(e: AccessibilityEvent) {
@@ -193,14 +194,6 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
 
     // ---- Jaga Api ----
 
-    private val midnight = Runnable { flameMaybe(); armMidnight() }
-
-    /** Timer ke 00.00 berikutnya (+2 dtk biar pasti udah ganti hari). Dipasang ulang tiap kali jalan. */
-    private fun armMidnight() {
-        h.removeCallbacks(midnight)
-        h.postDelayed(midnight, Flame.untilMidnight(System.currentTimeMillis()) + 2_000)
-    }
-
     /**
      * Siapa yang mau dikirimin: mode "semua yang ngestreak" = tiap baris Inbox yang ada apinya (termasuk api baru),
      * selain itu cuma yang dicentang. Yang udah kebagian hari ini selalu dilewati. [only] = Tes 1 teman.
@@ -217,37 +210,42 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         return want to est
     }
 
+    private fun flameLater(at: Long) { p.flameRetryAt = at; FlameAlarm.schedule(this) }
+
     private fun hasMsg() = db.msgs().any { it.on }
 
     /**
      * Cek apakah Jaga Api harus jalan sekarang: nyala, belum jalan hari ini, nggak ditunda, HP kebuka, nggak lagi telepon.
-     * Dipanggil jam 00.00 dan tiap HP dibuka. Langsung jalan, atau hitung mundur dulu kalau setelannya nyala.
+     * Dipanggil alarm [FlameAlarm] (00.00 dan coba ulang) dan tiap HP dibuka. Langsung jalan, atau hitung mundur dulu kalau setelannya nyala.
      * [force] = tombol tes di build debug.
      */
     fun flameMaybe(force: Boolean = false) {
         val now = System.currentTimeMillis()
-        if (!force && (!p.flameOn || !Flame.due(p.flameLastRun, now) || now < p.flameSnoozeUntil)) return
-        if (bot.running || flameCard != null || pause != null) return
-        if (getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked) return
-        if (getSystemService(android.media.AudioManager::class.java).mode != android.media.AudioManager.MODE_NORMAL) return
+        if (!force && (!p.flameOn || !Flame.due(p.flameLastRun, now) || now < p.flameSnoozeUntil || now < p.flameRetryAt)) return
+        if (bot.running || flameCard != null) return
+        if (FlameAlarm.locked(this)) return // jalan pas HP dibuka (USER_PRESENT)
+        // lagi telepon atau Pause Card lagi nongol: jangan diganggu, alarm 2 menit lagi
+        if (pause != null || getSystemService(android.media.AudioManager::class.java).mode != android.media.AudioManager.MODE_NORMAL) { flameLater(now + 2 * 60_000); return }
         if (!hasMsg()) return
         val (_, est) = flameWant(null)
         if (est == 0 && !p.flameAll) return // belum ada yang dicentang; dicek lagi pas HP dibuka berikutnya
         float?.hide()
         flameCard = FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() }).also { card ->
-            if (p.flameCountdown || force) card.countdown(est, onSnooze = { p.flameSnoozeUntil = System.currentTimeMillis() + 60 * 60_000; card.dismiss() }, onStart = { flameRun(null) })
+            if (p.flameCountdown || force) card.countdown(est, onSnooze = { System.currentTimeMillis().plus(60 * 60_000).let { p.flameSnoozeUntil = it; flameLater(it) }; card.dismiss() }, onStart = { flameRun(null) })
             else flameRun(null)
         }
     }
 
     /**
-     * Dari layar Jaga Api: kirim sekarang (semua) atau tes ke satu teman. Ini kamu yang minta, jadi teman yang udah
-     * kebagian hari ini tetap dikirimin lagi (layar udah nanya dulu). -1 = lagi jalan, 0 = nggak ada pesan aktif.
+     * Kirim sekarang. Dari layar Jaga Api ([again] = true): teman yang udah kebagian hari ini tetap dikirimin lagi
+     * (layar udah nanya dulu), kecuali yang udah dapat pesan yang sama. Dari widget/notif ([again] = false): cuma yang
+     * belum kebagian sama sekali. -1 = lagi jalan, 0 = nggak ada pesan aktif, 2 = semua udah aman, 1 = jalan.
      */
-    fun flameNow(only: String? = null): Int {
-        if (bot.running) return -1
+    fun flameNow(only: String? = null, again: Boolean = true): Int {
+        if (bot.running || flameCard != null) return -1
         if (!hasMsg()) return 0
-        flameRun(only, again = true)
+        if (!again && flameWant(only).second == 0 && db.friends().any { it.streak > 0 }) return 2
+        flameRun(only, again)
         return 1
     }
 
@@ -257,24 +255,48 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         val msgs = db.msgs(); val rnd = java.util.Random()
         float?.hide()
         val card = flameCard ?: FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() }).also { flameCard = it }
-        var ok = 0; var n = 0
+        FlameAlarm.clear(this)
+        var ok = 0; var n = 0; var stopped = false
+        // angka api yang kebaca di Inbox: teman yang apinya padam sejak pindai terakhir jadi 0, biar widget nggak nyangkut
+        val last = db.friends().associate { it.name to it.streak }.toMutableMap()
         bot.sweep(
             want = { name -> n < Flame.MAX_FRIENDS && want(name) },
             pick = { name, _ -> Flame.pick(msgs, db.lastMsg(name), rnd)?.let { m -> m.id to m.text } },
             total = est, back = fgPkg,
-            progress = { i, t, name -> card.progress(i, t, name) { bot.stop() } },
+            progress = { i, t, name -> card.progress(i, t, name) { stopped = true; bot.stop() } },
             each = { name, streak, id, note ->
                 n++
                 db.logSent(today, name, id, note == null, note)
                 db.touchFriend(name, if (note == null) streak + 1 else streak)
                 if (note == null) ok++
             },
+            saw = { name, s -> if (last[name] != s && (s > 0 || name in last)) { last[name] = s; db.touchFriend(name, s) } },
             done = { cancelled ->
-                if (only == null && !cancelled) p.flameLastRun = today.toString()
+                // cancelled tanpa Batal = TikTok/Inbox nggak kebuka, dihitung gagal juga
+                val bad = n - ok + if (cancelled && !stopped) 1 else 0
+                val retry = if (only == null) flameAfter(today, bad, stopped) else null
                 card.dismiss()
-                Live.bump()
-                notifyFlame(ok, n, cancelled)
+                Live.bump(); Widgets.update(this)
+                notifyFlame(ok, n, stopped, cancelled && !stopped, retry)
             })
+    }
+
+    /**
+     * Abis jalan: hari ditandai beres kalau nol gagal atau kamu yang Batal. Kalau ada yang gagal, coba ulang otomatis
+     * (+10, +20 menit, cuma ke yang belum kebagian) sampai [Flame.MAX_TRIES]x. Hasil = jam coba ulang, null = udahan.
+     */
+    private fun flameAfter(day: java.time.LocalDate, bad: Int, stopped: Boolean): Long? {
+        var retry: Long? = null
+        if (bad == 0 || stopped) p.flameTries = ""
+        else {
+            val t = Flame.tries(p.flameTries, day) + 1
+            p.flameTries = "$day|$t"
+            retry = Flame.retryAt(t, System.currentTimeMillis())
+        }
+        p.flameRetryAt = retry ?: 0
+        if (retry == null) p.flameLastRun = day.toString()
+        FlameAlarm.schedule(this)
+        return retry
     }
 
     /** Dari layar Teman: pindai Inbox. done(jumlah) atau null kalau gagal. */
@@ -286,13 +308,21 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         }
     }
 
-    private fun notifyFlame(ok: Int, n: Int, cancelled: Boolean) {
-        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
-        val title = when { n == 0 -> "Semua api udah aman hari ini"; ok == n -> "Api $ok teman aman 🔥"; else -> "Api $ok dari $n teman aman" }
-        val text = when { cancelled -> "Dibatalin di tengah jalan."; ok < n -> "${n - ok} gagal. Ketuk buat lihat alasannya."; else -> "Tinggal tunggu mereka bales." }
-        val nn = NotificationCompat.Builder(this, CH_NUDGE).setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle(title).setContentText(text).setContentIntent(openApp(this, false)).setAutoCancel(true).build()
-        runCatching { NotificationManagerCompat.from(this).notify(NOTIF_FLAME, nn) }
+    private fun notifyFlame(ok: Int, n: Int, stopped: Boolean, broke: Boolean, retry: Long?) {
+        val title = when {
+            broke && n == 0 -> "TikTok nggak kebuka"
+            n == 0 -> "Semua api udah aman hari ini"
+            ok == n -> "Api $ok teman aman 🔥"
+            else -> "Api $ok dari $n teman aman"
+        }
+        val at = retry?.let { java.time.Instant.ofEpochMilli(it).atZone(Days.zone).toLocalTime().toString().take(5).replace(':', '.') }
+        val text = when {
+            stopped -> "Dibatalin di tengah jalan."
+            at != null -> "Ada yang gagal, aku coba lagi jam $at."
+            broke || ok < n -> "Masih ada yang gagal. Ketuk Coba lagi, atau lihat alasannya di Riwayat."
+            else -> "Tinggal tunggu mereka bales."
+        }
+        FlameAlarm.notify(this, title, text, openApp(this, false), action = !stopped && at == null && (broke || ok < n), id = NOTIF_FLAME, label = "Coba lagi")
     }
 
     private fun nudge(app: App, n: Int, limit: Int) {
