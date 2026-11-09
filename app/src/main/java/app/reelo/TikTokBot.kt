@@ -46,13 +46,16 @@ class TikTokBot(private val svc: AccessibilityService) {
     fun destroy() = scope.cancel()
 
     /** Pindai Inbox. Hasil null = TikTok nggak ada / Inbox nggak kebuka. [back] = package yang dibuka lagi setelah selesai. */
-    fun scan(back: String?, done: (List<Friend>?) -> Unit) {
+    fun scan(back: String?, done: (List<Friend>?, Boolean) -> Unit) {
         if (running) return
         job = scope.launch {
             var res: List<Friend>? = null
-            try { res = doScan() } finally { leave(back); done(res) }
+            try { res = doScan() } finally { leave(back); done(res, scanComplete) }
         }
     }
+
+    /** false = pindai terakhir kepotong (scroll ditolak padahal list masih bisa turun): jangan nolkan yang nggak kebaca. */
+    private var scanComplete = false
 
     /**
      * Sapu Inbox sekali dari atas ke bawah: tiap baris yang punya api, belum dikirim, dan [want] = true langsung
@@ -200,6 +203,7 @@ class TikTokBot(private val svc: AccessibilityService) {
         val pkg = TikTokUi.pkg(svc) ?: return null
         if (!open(pkg) || !inbox()) return null
         toTop()
+        scanComplete = true
         val found = LinkedHashMap<String, Friend>()
         var stale = 0
         for (i in 0 until 15) {
@@ -210,7 +214,14 @@ class TikTokBot(private val svc: AccessibilityService) {
             log("scan page=$i rows=${rs.size} streak=${rs.count { it.streak > 0 }} restore=${rs.count { it.restore > 0 }} total=${found.size}")
             stale = if (found.size == before) stale + 1 else 0
             if (stale >= 2) break
-            if (list(r)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) != true) break
+            // scroll kadang ditolak sekali (abis animasi): coba 3x, sama kayak sapuan
+            var moved = false
+            for (t in 0 until 3) { if (scrollDown(root() ?: r)) { moved = true; break }; delay(500) }
+            if (!moved) {
+                val more = root()?.let(::list)?.actionList?.any { it.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD } == true
+                if (more) { scanComplete = false; log("scan: scroll ditolak padahal masih ada, hasil sebagian") }
+                break
+            }
             delay(700)
         }
         toTop() // biar pas kamu buka TikTok, Inbox nggak nyangkut di bawah

@@ -13,6 +13,7 @@ import app.reelo.Cream
 import app.reelo.LocalReduce
 import kotlinx.coroutines.delay
 import androidx.compose.animation.core.Animatable
+import app.reelo.Mood
 import app.reelo.ReelService
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -156,12 +157,19 @@ fun Home(onApp: (App) -> Unit, onRecap: () -> Unit, onApi: () -> Unit) {
         Screen {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Lbl(today.format(DATE_LONG)); Px(greeting(), 24.sp) }
-                Pill("$streak hari waras", pal.teal)
+                if (p.limitsOn) Pill("$streak hari waras", pal.teal)
             }
             if (!ReelService.isOn(ctx)) Card(onClick = { open(ctx, android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS) }) {
-                Txt("Penghitung lagi mati", 14.sp, pal.red, bold = true)
-                Small(if (ReelService.enabled(ctx)) STUCK else "Reels yang kamu tonton sekarang nggak kehitung. Ketuk buat nyalain.")
+                Txt("Reelo lagi mati", 14.sp, pal.red, bold = true)
+                Small(if (ReelService.enabled(ctx)) STUCK else "Jaga Api nggak bisa jalan tanpa layanan Aksesibilitas. Ketuk buat nyalain.")
             }
+            ApiHero(onApi)
+            if (!p.limitsOn) Card {
+                SettingRow("Pembatas reels", "Opsional: maskot melayang, jatah reels harian, Jam Malam, dan Pause Card.") {
+                    Toggle(p.limitsOn, "Pembatas reels") { p.limitsOn = it; Live.bump() }
+                }
+            }
+            if (p.limitsOn) {
             val empty = loaded != null && di == 0 && n == 0
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(
@@ -218,7 +226,6 @@ fun Home(onApp: (App) -> Unit, onRecap: () -> Unit, onApi: () -> Unit) {
                 }
             }
             if (di == 0) ChallengeCard(date, data, limit) { confetti++ }
-            if (di == 0) ApiCard(onApi)
             if (maxBack >= 1) Card(onClick = onRecap) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) { Txt("Recap 7 hari", bold = true); Small("Rangkuman yang bisa kamu bagikan") }
@@ -226,6 +233,7 @@ fun Home(onApp: (App) -> Unit, onRecap: () -> Unit, onApi: () -> Unit) {
                 }
             }
             if (empty && !first.isEqual(today)) Small("Kemarin kamu berhenti di ${load(v, initial = 0) { Db.get(ctx).count(Days.start(today.minusDays(1)), Days.start(today)) }}. Mau coba lebih sedikit?", Modifier.fillMaxWidth(), pal.muted)
+            }
         }
         Confetti(confetti)
     }
@@ -240,28 +248,64 @@ private fun spinning(spin: Int): Boolean {
 }
 
 /** Kartu Jaga Api di Beranda: status singkat, ketuk buat buka. */
+/**
+ * Bagian utama Beranda: status api TikTok hari ini. Kalau ada yang belum aman, tombol Nyalain sekarang langsung kirim
+ * ke yang belum kebagian (sama kayak tombol api di widget). Di bawahnya daftar teman: udah aman atau belum.
+ */
 @Composable
-private fun ApiCard(onClick: () -> Unit) {
+private fun ApiHero(onApi: () -> Unit) {
     val ctx = LocalContext.current
     val p = prefs()
+    val pal = LocalPal.current
     val v = Live.v
-    val (on, total) = load(v, initial = 0 to 0) { Db.get(ctx).friends().filter { it.streak > 0 }.let { l -> l.count { it.on } to l.size } }
-    val today = app.reelo.Flame.day(System.currentTimeMillis()).toString()
-    val sentToday = load(v, initial = 0) { Db.get(ctx).sentOk(app.reelo.Flame.day(System.currentTimeMillis())).size }
-    Card(onClick = onClick) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FlameIcon(22.dp)
-            Column(Modifier.weight(1f)) {
-                Lbl("Jaga Api TikTok")
-                Txt(when {
-                    total == 0 -> "Nyalain streak otomatis tiap 00.00"
-                    !p.flameOn -> "Mati · $on teman dicentang"
-                    p.flameLastRun == today -> "Hari ini $sentToday api aman"
-                    else -> "$on teman · jalan jam 00.00"
-                }, 14.sp, bold = true)
+    val day = app.reelo.Flame.day(System.currentTimeMillis())
+    val targets = load(v, initial = emptyList<app.reelo.Friend>()) { Db.get(ctx).flameTargets(p.flameAll) }
+    val sent = load(v, initial = emptySet<String>()) { Db.get(ctx).sentOk(day) }
+    val safe = targets.count { it.name in sent }
+    val pend = targets.size - safe
+    val hour = LocalTime.now().hour
+    var info by remember { mutableStateOf<String?>(null) }
+    val (title, sub) = when {
+        !p.flameOn -> "Jaga Api mati" to "Nyalain biar streak TikTok aman tiap 00.00, tanpa kamu buka TikTok."
+        targets.isEmpty() -> "Pindai Inbox dulu" to "Aku buka Inbox TikTok sebentar buat nyari teman yang lagi ngestreak."
+        pend == 0 -> "$safe api aman" to "Jalan lagi besok jam 00.00. Tinggal tunggu mereka bales."
+        hour >= app.reelo.Flame.REMIND.first() -> "$pend api belum aman!" to "Sisa ${24 - hour} jam sebelum padam. Pencet tombol di bawah."
+        else -> "$pend api belum aman" to "Jalan sendiri jam 00.00, atau nyalain sekarang."
+    }
+    Film {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box {
+                MascotView(when { pend == 0 && targets.isNotEmpty() -> Mood.SEGAR; hour >= 20 -> Mood.CAPEK; else -> Mood.SANTAI }, 3.dp)
+                Box(Modifier.align(Alignment.BottomEnd)) { FlameIcon(26.dp, if (pend > 0 || !p.flameOn) pal.muted else pal.mus) }
             }
-            Px(">", 20.sp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Lbl("Jaga Api TikTok", pal.filmFg)
+                Px(title, 22.sp, if (pend > 0 && p.flameOn) pal.red else pal.mus)
+                Txt(sub, 12.sp, pal.filmFg)
+            }
         }
+        if (!p.flameOn || targets.isEmpty()) Btn(if (!p.flameOn) "Atur Jaga Api" else "Pindai sekarang", onClick = onApi)
+        else if (pend > 0) Btn("Nyalain sekarang") {
+            val s = ReelService.inst ?: run { info = "Reelo lagi mati, nyalain dulu di Aksesibilitas."; return@Btn }
+            info = when (s.flameNow(null, again = false)) { -1 -> "Lagi jalan, tunggu bentar."; 0 -> "Belum ada pesan aktif. Tulis dulu di Jaga Api."; 2 -> "Semua udah aman."; else -> null }
+        }
+    }
+    info?.let { Small(it, color = pal.red) }
+    if (p.flameOn && targets.isNotEmpty()) Card(onClick = onApi) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { Lbl("Hari ini · $safe dari ${targets.size} aman") }
+            Px(">", 18.sp)
+        }
+        // yang belum aman di atas, biar langsung kelihatan
+        targets.sortedBy { it.name in sent }.take(8).forEach { f ->
+            val ok = f.name in sent
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Txt(f.name, 14.sp, if (ok) pal.fg else pal.red, bold = !ok, modifier = Modifier.weight(1f))
+                if (f.streak > 0) { FlameIcon(14.dp, if (ok) pal.red else pal.muted); Px("${f.streak}", 14.sp) } else Small("baru")
+                Txt(if (ok) "✓" else "belum", 13.sp, if (ok) pal.teal else pal.red, bold = true)
+            }
+        }
+        if (targets.size > 8) Small("+${targets.size - 8} lagi")
     }
 }
 

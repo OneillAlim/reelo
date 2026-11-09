@@ -3,6 +3,56 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-09 (sore) · Jaga Api jadi fitur utama: Beranda + widget fokus ke api, pembatas reels opsional
+
+**Kenapa.** Bryan: orang pakai app ini buat nyalain streak; pembatas reels cuma sampingan. Permintaannya:
+- Beranda fokus ke Jaga Api;
+- widget nampilin kalau ada api yang belum aman / lupa, dan bisa diketuk buat nyalain;
+- maskot (dan semua fitur pembatas) baru muncul kalau pembatas reels dinyalain.
+
+**Perubahan.**
+- **`Prefs.limitsOn` default `false`.** Pembatas reels (maskot melayang, jatah, Jam Malam, Pause Card) jadi opsional.
+- **Beranda (`ui/Home.kt`):**
+  - Bagian utama sekarang `ApiHero`.
+    - Kartu film berisi status ("11 api aman" / "3 api belum aman" / "Jaga Api mati" / "Pindai Inbox dulu").
+    - Tombol **Nyalain sekarang** = `flameNow(again = false)`, sama kayak tombol widget.
+    - Daftar teman hari ini, yang belum aman di atas (merah "belum", yang aman ✓).
+  - Bagian reels (odometer, tiket, tantangan, recap, pill "hari waras") cuma tampil kalau pembatas nyala. Kalau mati,
+    ada satu kartu toggle "Pembatas reels (opsional)".
+  - `ApiCard` lama dihapus.
+- **Kendali:** kartu Jaga Api pindah ke paling atas.
+- **Widget (`Widget.kt`, `WidgetArt.flame`):** angka besar = api.
+  - Ada yang belum aman: angka merah, tulisan "api belum aman · ketuk buat nyalain", maskot lebih heboh. Setelah
+    20.00 makin heboh ("Sisa X jam!").
+  - Ketuk widget di mana aja = langsung nyalain (aksi `NOW`). Kalau udah aman, ketuk = buka app.
+  - Wide tanpa pembatas: panel kanan isinya "Aman 11/12" + bar, "Jalan sendiri 00.00" / "Ketuk = nyalain sekarang",
+    dan "Ingetin 20.00 · 23.00" / "Coba ulang HH.MM".
+  - Info reels cuma muncul kalau pembatas nyala.
+  - Pil 🔥 kecil (`w_flame`) dihapus dari layout, karena udah jadi angka utama.
+  - Ganti `limitsOn` langsung update widget.
+- **`Db.flameTargets(all)`:** satu sumber "siapa yang dijagain" buat Beranda, widget, dan pengingat. `flamePending`
+  dihitung dari sini.
+
+**Bug yang ketemu pas ngetes dan dibenerin.**
+- **Abis ngirim, angka api ditebak +1.** Teman Tambahan yang belum ngestreak jadi punya api palsu 🔥1 dan pindah ke
+  "API NYALA". Sekarang angka cuma dari yang kebaca di Inbox.
+- **Pindai berhenti di halaman pertama** kalau TikTok nolak `SCROLL_FORWARD` sekali (hasil: 6 dari 11), terus
+  `saveScan` **nolkan semua yang nggak kebaca**. Sekarang:
+  - pindai pakai `scrollDown()` 3x kayak sapuan;
+  - kalau list masih bisa turun tapi scroll ditolak, hasilnya dianggap sebagian dan yang nggak kebaca nggak dinolkan
+    (`saveScan(found, complete)`).
+
+**Dites di HP (POCO X5).**
+- Beranda dan Kendali tampil sesuai.
+- Ketiga widget nampilin "api aman" dan "api belum aman".
+- Ketuk widget waktu ada Tambahan yang belum aman: TikTok kebuka, sapuan lanjut sampai halaman 6 buat nyari teman
+  Tambahan, kirim, balik ke layar utama, notif "Api 1 teman aman 🔥".
+- Buka kunci HP lalu Jaga Api langsung jalan: lolos (15.53).
+
+**Belum.**
+- Perbaikan pindai belum dites ulang di HP. Layarnya keburu dipakai Bryan (auto-rotate nyala lagi).
+- Data teman di HP masih hasil pindai kepotong (6). Pindai ulang sekali buat ngebenerin.
+
 ## 2026-11-09 · Jaga Api dites ujung ke ujung di POCO X5, 6 bug dibenerin, daftar Tambahan, pembatas reels bisa dimatiin
 
 **Kenapa.** Bryan minta Jaga Api dites di HP-nya dari awal (pindai Inbox sampai kirim) dan semua edge case dicek. Dia

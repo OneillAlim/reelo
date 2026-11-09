@@ -39,18 +39,17 @@ object WidgetArt {
         return bmp
     }
 
-    /** Tombol api di widget: pil gelap, api pixel, lalu teks (jumlah yang belum aman, "aman", atau "off"). */
-    fun flame(ctx: android.content.Context, text: String, on: Boolean, u: Float): Bitmap {
+    /** Angka utama widget: api pixel lalu teks (jumlah yang belum/udah aman). [pill] = pakai latar gelap. */
+    fun flame(ctx: android.content.Context, text: String, on: Boolean, u: Float, sizeSp: Float = 14f, color: Int = 0xFFFFF6E6.toInt(), pill: Boolean = true): Bitmap {
         val g = Flame.ICON[0]
-        val lbl = label(ctx, text, 14f, if (on) 0xFFFFF6E6.toInt() else 0x99FFF6E6.toInt())
+        val lbl = label(ctx, text, sizeSp, if (on) color else color and 0x99FFFFFF.toInt())
         val pad = 3 * u
         val ih = g.size * u
         val h = maxOf(ih, lbl.height.toFloat()) + pad
         val w = pad * 2 + g[0].length * u + lbl.width
         val bmp = Bitmap.createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        p.color = 0xCC2B2118.toInt()
-        c.drawRoundRect(RectF(0f, 0f, w, h), h / 2, h / 2, p)
+        if (pill) { p.color = 0xCC2B2118.toInt(); c.drawRoundRect(RectF(0f, 0f, w, h), h / 2, h / 2, p) }
         p.color = if (on) 0xFFFF7A3D.toInt() else 0xFF8A7F74.toInt()
         val top = (h - ih) / 2
         g.forEachIndexed { y, row -> row.forEachIndexed { x, ch -> if (ch == '#') c.drawRect(pad + x * u, top + y * u, pad + (x + 1) * u, top + (y + 1) * u, p) } }

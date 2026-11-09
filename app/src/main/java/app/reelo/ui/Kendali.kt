@@ -46,17 +46,17 @@ fun Kendali(onApi: () -> Unit) {
 
     Screen {
         Top("Kendali") { Lbl("Total ${p.totalLimit}") }
-        Card {
-            SettingRow("Pembatas reels", if (p.limitsOn) "Jatah, Jam Malam, Mode Tegas, Fokus, Pause Card, dan maskot melayang aktif."
-                else "Mati. Reelo cuma jaga api TikTok. Reels tetap dihitung buat statistik, tapi nggak ada yang ngeganggu.") {
-                Toggle(p.limitsOn, "Pembatas reels") { p.limitsOn = it; Live.bump() }
-            }
-        }
         Card(onClick = onApi) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 FlameIcon(20.dp)
                 Column(Modifier.weight(1f)) { Txt("Jaga Api TikTok", bold = true); Small(if (p.flameOn) "Nyala · jalan tiap 00.00" else "Nyalain streak otomatis biar nggak perlu buka TikTok tengah malam") }
                 Px(">", 20.sp)
+            }
+        }
+        Card {
+            SettingRow("Pembatas reels", if (p.limitsOn) "Jatah, Jam Malam, Mode Tegas, Fokus, Pause Card, dan maskot melayang aktif."
+                else "Mati. Reelo cuma jaga api TikTok. Reels tetap dihitung buat statistik, tapi nggak ada yang ngeganggu.") {
+                Toggle(p.limitsOn, "Pembatas reels") { p.limitsOn = it; Live.bump() }
             }
         }
         if (p.limitsOn) {

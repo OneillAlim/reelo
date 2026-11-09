@@ -49,24 +49,36 @@ object Widgets {
         val sw = Db.get(ctx).range(Days.start(d), Days.end(d))
         val total = sw.size
         val limit = p.totalLimit
-        val heat = Stats.heat(total, limit)
-        val mood = Stats.mood(total, limit)
         val hour = LocalTime.now().hour
+        // Jaga Api fitur utama: angka besar di widget = api hari ini. Info reels cuma kalau pembatas reels nyala.
+        val db = Db.get(ctx)
+        val targets = if (p.flameOn) db.flameTargets(p.flameAll) else emptyList()
+        val sent = db.sentOk(Flame.day(System.currentTimeMillis()))
+        val safe = targets.count { it.name in sent }
+        val pend = targets.size - safe
+        val alert = pend > 0
+        val late = alert && hour >= Flame.REMIND.first()
+        val heat = if (p.limitsOn) Stats.heat(total, limit) else if (late) 3 else if (alert) 2 else 0
+        val mood = if (p.limitsOn) Stats.mood(total, limit) else when { late -> Mood.CAPEK; alert -> Mood.SANTAI; else -> Mood.SEGAR }
         val dm = ctx.resources.displayMetrics
         val u = 3 * dm.density
         val r = 16 * dm.density
         val open = ReelService.openApp(ctx, false)
         val left = if (total > limit) "lewat ${total - limit}" else "sisa ${limit - total}"
-        val pend = if (p.flameOn) Db.get(ctx).flamePending(Flame.day(System.currentTimeMillis()), p.flameAll) else 0
-        val flameBmp = WidgetArt.flame(ctx, when { !p.flameOn -> "off"; pend == 0 -> "aman"; else -> "$pend" }, p.flameOn, 2 * dm.density)
-        // ketuk api: langsung kirim ke yang belum kebagian. Jaga Api mati = buka app aja.
-        val flameTap = if (p.flameOn) FlameAlarm.pending(ctx, FlameAlarm.NOW) else open
-        val flameDesc = when { !p.flameOn -> "Jaga Api mati. Ketuk buat buka Reelo."; pend == 0 -> "Api TikTok hari ini aman."; else -> "$pend api TikTok belum aman. Ketuk buat nyalain." }
-        fun RemoteViews.flame() {
-            setImageViewBitmap(R.id.w_flame, flameBmp)
-            setOnClickPendingIntent(R.id.w_flame, flameTap)
-            setContentDescription(R.id.w_flame, flameDesc)
+        // ada yang belum aman: ketuk widget di mana aja = langsung nyalain (kirim ke yang belum kebagian)
+        val tap = if (alert) FlameAlarm.pending(ctx, FlameAlarm.NOW) else open
+        val big = when { !p.flameOn -> "mati"; targets.isEmpty() -> "pindai"; alert -> "$pend"; else -> "$safe" }
+        val sub = when {
+            !p.flameOn -> "Jaga Api mati"
+            targets.isEmpty() -> "buka Reelo dulu"
+            late -> "api belum aman!\nketuk buat nyalain"
+            alert -> "api belum aman\nketuk buat nyalain"
+            else -> "api aman hari ini"
         }
+        val desc = when { !p.flameOn -> "Jaga Api mati. Ketuk buat buka Reelo."; targets.isEmpty() -> "Jaga Api belum diatur."; alert -> "$pend api TikTok belum aman. Ketuk buat nyalain."; else -> "$safe api TikTok aman hari ini." } +
+            if (p.limitsOn) " $total reels hari ini, $left." else ""
+        fun hero(st: WStyle?, sizeSp: Float) = WidgetArt.flame(ctx, big, p.flameOn && targets.isNotEmpty(), 3 * dm.density * sizeSp / 44f, sizeSp,
+            if (alert) 0xFFFF5A47.toInt() else st?.let { WidgetArt.ink(it, hour) } ?: 0xFFFFC458.toInt(), pill = false)
         fun scale(dp: Int) = (dp * dm.density / (Sprite.N + 2)).toInt().coerceAtLeast(2)
 
         /** Ukuran widget dalam px dari opsi launcher (portrait: lebar minimum, tinggi maksimum). */
@@ -92,9 +104,8 @@ object Widgets {
                 ctx, id, Intent(ctx, cls).setAction(ACTION_STYLE).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             ))
-            setOnClickPendingIntent(R.id.w_root, open)
-            setContentDescription(R.id.w_root, "Reelo: $total reels hari ini, $left. Gaya ${style.label}.")
-            flame()
+            setOnClickPendingIntent(R.id.w_root, tap)
+            setContentDescription(R.id.w_root, "$desc Gaya ${style.label}.")
         }
 
         if (small.isNotEmpty()) {
@@ -106,8 +117,8 @@ object Widgets {
                 mgr.updateAppWidget(id, RemoteViews(ctx.packageName, R.layout.widget_small).apply {
                     common(id, SmallWidget::class.java, st, w, h, panel = false)
                     mascot(frames)
-                    setImageViewBitmap(R.id.w_count, WidgetArt.label(ctx, "$total", 52f, if (heat >= 2) WidgetArt.accent(st, hour, heat) else ink))
-                    setImageViewBitmap(R.id.w_left, WidgetArt.label(ctx, "$left reels", 15f, ink))
+                    setImageViewBitmap(R.id.w_count, hero(st, 44f))
+                    setImageViewBitmap(R.id.w_left, WidgetArt.label(ctx, sub + if (p.limitsOn) "\n$total reels · $left" else "", 13f, ink))
                 })
             }
         }
@@ -123,8 +134,25 @@ object Widgets {
                 mgr.updateAppWidget(id, RemoteViews(ctx.packageName, R.layout.widget_wide).apply {
                     common(id, WideWidget::class.java, st, w, h, panel = true)
                     mascot(frames)
-                    setImageViewBitmap(R.id.w_count, WidgetArt.label(ctx, "$total reels", 26f, if (heat >= 2) WidgetArt.accent(st, hour, heat) else WidgetArt.ink(st, hour)))
-                    rows.forEachIndexed { i, (tv, pb, iv) ->
+                    setImageViewBitmap(R.id.w_count, hero(st, 30f))
+                    if (!p.limitsOn) {
+                        // tanpa pembatas reels: panel kanan = ringkasan api
+                        val icon = WidgetArt.flame(ctx, "", true, 2 * dm.density, pill = false)
+                        val retry = p.flameRetryAt.takeIf { it > System.currentTimeMillis() }?.let { java.time.Instant.ofEpochMilli(it).atZone(Days.zone).toLocalTime().toString().take(5).replace(':', '.') }
+                        val lines = listOf(
+                            if (targets.isEmpty()) "Belum ada teman" else "Aman $safe/${targets.size}",
+                            if (alert) "Ketuk = nyalain sekarang" else "Jalan sendiri 00.00",
+                            when { retry != null -> "Coba ulang $retry"; late -> "Sisa ${24 - hour} jam!"; else -> "Ingetin 20.00 · 23.00" },
+                        )
+                        rows.forEachIndexed { i, (tv, pb, iv) ->
+                            setImageViewBitmap(iv, icon)
+                            setTextViewText(tv, lines[i])
+                            if (i == 0 && targets.isNotEmpty()) {
+                                setProgressBar(pb, targets.size, safe, false)
+                                setColorStateList(pb, "setProgressTintList", android.content.res.ColorStateList.valueOf(if (alert) 0xFFE0503A.toInt() else 0xFF22897F.toInt()))
+                            } else setViewVisibility(pb, android.view.View.GONE)
+                        }
+                    } else rows.forEachIndexed { i, (tv, pb, iv) ->
                         val (a, n, l) = apps[i]
                         setImageViewBitmap(iv, minis[i])
                         setTextViewText(tv, "${a.label}  $n/$l")
@@ -145,12 +173,15 @@ object Widgets {
                     for (f in 0..2) setImageViewBitmap(FX[f], WidgetArt.signFx(w, h, u, heat, f))
                     setInt(R.id.w_fx, "setFlipInterval", WidgetArt.flipMs(heat) / 2 + 150)
                     mascot(frames)
-                    setImageViewBitmap(R.id.w_label, WidgetArt.label(ctx, "HARI INI", 13f, 0xFFF6E2B5.toInt()))
-                    setImageViewBitmap(R.id.w_count, WidgetArt.label(ctx, "$total reels", 32f, if (heat >= 3) 0xFFFF6B55.toInt() else 0xFFFFC458.toInt(), glow = true))
-                    setImageViewBitmap(R.id.w_left, WidgetArt.label(ctx, "$left\ndari $limit", 16f, 0xFFF6E2B5.toInt()))
-                    setOnClickPendingIntent(R.id.w_root, open)
-                    setContentDescription(R.id.w_root, "Reelo: $total reels hari ini, $left dari $limit.")
-                    flame()
+                    setImageViewBitmap(R.id.w_label, WidgetArt.label(ctx, when { !p.flameOn || targets.isEmpty() -> "JAGA API"; alert -> "API BELUM AMAN"; else -> "API AMAN" }, 13f, 0xFFF6E2B5.toInt()))
+                    setImageViewBitmap(R.id.w_count, hero(null, 32f))
+                    setImageViewBitmap(R.id.w_left, WidgetArt.label(ctx, when {
+                        p.limitsOn -> "$total reels\n$left"
+                        alert -> "ketuk buat\nnyalain!"
+                        else -> "lagi\n00.00"
+                    }, 16f, 0xFFF6E2B5.toInt()))
+                    setOnClickPendingIntent(R.id.w_root, tap)
+                    setContentDescription(R.id.w_root, desc)
                 })
             }
         }

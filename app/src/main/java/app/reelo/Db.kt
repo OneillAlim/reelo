@@ -27,10 +27,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "reelo.db", n
     }
 
     /** Hasil pindai Inbox. Centang lama dipertahankan; yang nggak muncul lagi di-nolkan (disembunyikan, bukan dihapus). */
-    fun saveScan(found: List<Friend>) = writableDatabase.run {
+    fun saveScan(found: List<Friend>, complete: Boolean = true) = writableDatabase.run {
         beginTransaction()
         try {
-            execSQL("UPDATE friend SET streak = 0, restore = 0")
+            // pindai kepotong: cuma perbarui yang kebaca, sisanya biarin (jangan dianggap padam)
+            if (complete) execSQL("UPDATE friend SET streak = 0, restore = 0")
             found.forEach { f ->
                 // INSERT OR IGNORE + UPDATE, karena upsert baru ada di SQLite Android 11 (minSdk kita 28)
                 execSQL("INSERT OR IGNORE INTO friend(name, \"on\") VALUES(?, 0)", arrayOf<Any>(f.name)) // teman baru nggak dicentang, kamu yang milih
@@ -68,11 +69,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "reelo.db", n
         buildSet { while (c.moveToNext()) add(c.getString(0)) }
     }
 
-    /** Teman berapi yang hari itu belum kebagian pesan (angka di widget dan pengingat). */
-    fun flamePending(day: LocalDate, all: Boolean): Int {
-        val done = sentOk(day)
-        return friends().count { (it.streak > 0 && all || it.on) && it.name !in done }.coerceAtMost(Flame.MAX_FRIENDS)
-    }
+    /** Teman yang dijagain tiap malam: yang berapi (mode semua) plus yang dicentang/Tambahan. */
+    fun flameTargets(all: Boolean): List<Friend> = friends().filter { it.streak > 0 && all || it.on }.take(Flame.MAX_FRIENDS)
+
+    /** Yang hari itu belum kebagian pesan (angka di widget, Beranda, dan pengingat). */
+    fun flamePending(day: LocalDate, all: Boolean): Int = sentOk(day).let { done -> flameTargets(all).count { it.name !in done } }
 
     /** Teman yang hari itu udah kebagian salah satu pesan [ids] (buat kirim manual: jangan dobel pesan yang sama). */
     fun sentOkWith(day: LocalDate, ids: Collection<Long>): Set<String> {

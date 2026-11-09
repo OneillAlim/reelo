@@ -74,7 +74,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
 
     override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
         if (key in setOf("floatOn", "snoozeUntil", "mascotName", "mascotTiktok", "mascotShorts", "mascotIg", "accName", "reduceMotion", "limitsOn")) refreshFloat()
-        if (key == "flameOn" || key == "flameAll") { FlameAlarm.schedule(this); Widgets.update(this) }
+        if (key == "flameOn" || key == "flameAll" || key == "limitsOn") { FlameAlarm.schedule(this); Widgets.update(this) }
     }
 
     override fun onAccessibilityEvent(e: AccessibilityEvent) {
@@ -275,7 +275,8 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
             each = { name, streak, id, note ->
                 n++
                 db.logSent(today, name, id, note == null, note)
-                db.touchFriend(name, if (note == null) streak + 1 else streak)
+                // angka api nggak ditebak (+1): naiknya baru kalau dia bales, dan teman Tambahan bakal kebaca punya api
+                // palsu. Angka cuma diambil dari yang kebaca di Inbox (saw).
                 if (note == null) ok++
             },
             extra = extra,
@@ -315,8 +316,8 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     /** Dari layar Teman: pindai Inbox. done(jumlah) atau null kalau gagal. */
     fun flameScan(done: (Int?) -> Unit) {
         if (bot.running) { done(null); return }
-        bot.scan(fgPkg) { found ->
-            if (found != null) { db.saveScan(found); p.flameScanTs = System.currentTimeMillis() }
+        bot.scan(fgPkg) { found, complete ->
+            if (found != null) { db.saveScan(found, complete); p.flameScanTs = System.currentTimeMillis() }
             Live.bump(); done(found?.count { it.streak > 0 })
         }
     }
