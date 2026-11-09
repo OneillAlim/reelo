@@ -46,6 +46,12 @@ fun Kendali(onApi: () -> Unit) {
 
     Screen {
         Top("Kendali") { Lbl("Total ${p.totalLimit}") }
+        Card {
+            SettingRow("Pembatas reels", if (p.limitsOn) "Jatah, Jam Malam, Mode Tegas, Fokus, Pause Card, dan maskot melayang aktif."
+                else "Mati. Reelo cuma jaga api TikTok. Reels tetap dihitung buat statistik, tapi nggak ada yang ngeganggu.") {
+                Toggle(p.limitsOn, "Pembatas reels") { p.limitsOn = it; Live.bump() }
+            }
+        }
         Card(onClick = onApi) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 FlameIcon(20.dp)
@@ -53,6 +59,7 @@ fun Kendali(onApi: () -> Unit) {
                 Px(">", 20.sp)
             }
         }
+        if (p.limitsOn) {
         Card {
             Lbl("Jatah reels per hari")
             App.entries.forEach { app ->
@@ -89,6 +96,7 @@ fun Kendali(onApi: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) { Txt("Counter \"Satu Lagi\"", bold = true, modifier = Modifier.weight(1f)); Big("$satuLagi") }
             if (satuLagi > 0) Px((1..satuLagi).chunked(5).joinToString("  ") { c -> "|".repeat(c.size) }, 18.sp, pal.red)
             Small("Kali kamu tahan Lanjut setelah jatah habis, minggu ini.")
+        }
         }
     }
 }

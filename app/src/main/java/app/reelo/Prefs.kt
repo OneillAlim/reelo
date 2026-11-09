@@ -88,6 +88,8 @@ class Prefs private constructor(val sp: SharedPreferences) {
     var nightLimit by int(10)
     var nightTheme by bool(true)
     var strict by bool(false)
+    /** false = cuma Jaga Api: nggak ada Pause Card, notif jatah, Jam Malam, Mode Tegas, Fokus, maskot melayang. Hitungan tetap dicatat. */
+    var limitsOn by bool(true)
     var reduceMotion by bool(false)
     var haptics by bool(true)
     var floatOn by bool(true)

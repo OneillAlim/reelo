@@ -56,7 +56,7 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
     val log = load(v, initial = emptyList<Db.Sent>()) { db.history(60) }
     val sentToday = load(v, initial = emptySet<String>()) { db.sentOkWith(Flame.day(System.currentTimeMillis()), db.msgs().filter { it.on }.map { it.id }) }
     val live = friends.filter { it.streak > 0 }
-    val picked = (if (p.flameAll) live else live.filter { it.on }).take(Flame.MAX_FRIENDS)
+    val picked = friends.filter { it.streak > 0 && p.flameAll || it.on }.take(Flame.MAX_FRIENDS)
     val activeMsgs = msgs.count { it.on }
     val today = Flame.day(System.currentTimeMillis()).toString()
     val doneToday = p.flameLastRun == today
@@ -80,7 +80,7 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
             Small("• Ngirim pesan otomatis itu melanggar aturan TikTok soal otomasi. Akun bisa dibatasi; pakai dengan risiko sendiri.")
             Small("• Streak butuh dua arah. Reelo cuma ngisi sisimu, temanmu tetap harus kirim juga.")
             Small("• HP yang terkunci nggak bisa dibuka app. Kalau jam 00.00 HP dikunci, Jaga Api jalan pas HP pertama kali kamu buka.")
-            Small("• Cuma ke teman yang kamu centang, maksimal 1 pesan per teman per hari, tanpa link.")
+            Small("• Ke semua teman yang lagi ngestreak (atau cuma yang kamu centang), maksimal 1 pesan per teman per hari, tanpa link.")
             Btn("Ngerti, nyalain") { p.flameWarned = true; p.flameOn = true; warn = false; Live.bump() }
         }
         Film {
@@ -117,11 +117,14 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
         val lastDay = log.firstOrNull()?.day
         if (lastDay != null) Card(onClick = onLog) {
             val day = log.filter { it.day == lastDay }
-            val ok = day.count { it.ok }
+            // per orang: yang gagal lalu kekirim pas coba ulang nggak dihitung gagal
+            val okNames = day.filter { it.ok }.map { it.name }.toSet()
+            val ok = okNames.size
+            val bad = day.map { it.name }.toSet().size - ok
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Lbl(if (lastDay == today) "Hari ini" else "Terakhir · $lastDay")
-                    Txt("$ok terkirim" + (if (day.size > ok) " · ${day.size - ok} gagal" else "") + " · mulai ${hhmm(day.minOf { it.ts })}", bold = true)
+                    Txt("$ok terkirim" + (if (bad > 0) " · $bad gagal" else "") + " · mulai ${hhmm(day.minOf { it.ts })}", bold = true)
                 }
                 Px(">", 20.sp)
             }
@@ -166,6 +169,11 @@ fun JagaApi(onBack: () -> Unit, onFriends: () -> Unit, onMsgs: () -> Unit, onLog
                 p.flameLastRun = ""; p.flameTries = ""; p.flameRetryAt = System.currentTimeMillis() + 60_000
                 app.reelo.FlameAlarm.schedule(ctx); info = "Alarm dipasang, jalan sekitar 1 menit lagi. Boleh kunci HP buat ngetes."
             })
+        if (ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
+            Pill("debug: pencet tombol 🔥 widget", pal.muted, Modifier.clickable {
+                // PendingIntent yang sama persis dengan tombol api di widget
+                runCatching { app.reelo.FlameAlarm.pending(ctx, app.reelo.FlameAlarm.NOW).send() }
+            })
     }
 }
 
@@ -193,6 +201,7 @@ private fun Ready(hasMsg: Boolean, scanned: Boolean, onMsgs: () -> Unit, onFrien
             runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:$pkg")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
         },
         Check(app.reelo.TikTokUi.pkg(ctx) != null, "TikTok terpasang", null) {},
+        Check(app.reelo.FlameAlarm.miuiPopup(ctx) != false, "Xiaomi: Izin lainnya > \"Open new windows while running in the background\" (Buka jendela baru di latar) harus Always allow, biar TikTok bisa kebuka pas kamu lagi di app lain", "Buka izin") { app.reelo.FlameAlarm.openMiuiPerms(ctx) },
         Check(scanned, "Daftar teman udah dipindai", "Pindai", onFriends),
         Check(hasMsg, "Ada pesan aktif", "Tulis", onMsgs),
     )
@@ -220,8 +229,12 @@ fun ApiFriends(onBack: () -> Unit) {
     var info by remember { mutableStateOf<String?>(null) }
     var q by remember { mutableStateOf("") }
     val live = friends.filter { it.streak > 0 && it.name.contains(q.trim(), ignoreCase = true) }
-    val dead = friends.filter { it.streak == 0 && it.restoreDays > 0 && it.name.contains(q.trim(), ignoreCase = true) }
+    val dead = friends.filter { it.streak == 0 && !it.on && it.restoreDays > 0 && it.name.contains(q.trim(), ignoreCase = true) }
     val onCount = friends.count { it.on && it.streak > 0 }
+    // daftar Tambahan: dikirimin walau belum/nggak ngestreak, buat mulai atau nyalain ulang streak
+    val extras = friends.filter { it.on && it.streak == 0 }
+    val others = friends.filter { !it.on && it.streak == 0 && it.restoreDays == 0 && it.name.contains(q.trim(), ignoreCase = true) }
+    var adding by remember { mutableStateOf(false) }
 
     fun scan() {
         val s = svc() ?: run { info = "Penghitung Reelo lagi mati, nyalain dulu di Aksesibilitas."; return }
@@ -266,15 +279,43 @@ fun ApiFriends(onBack: () -> Unit) {
             }
             if ((if (p.flameAll) live.size else onCount) > Flame.MAX_FRIENDS) Small("Cuma ${Flame.MAX_FRIENDS} teman teratas yang dikirimin tiap malam.", color = pal.red)
         }
-        if (dead.isNotEmpty()) {
-            Lbl("Api padam · pulihkan di TikTok")
+        if (friends.isNotEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { Lbl("Tambahan · ${extras.size} ikut") }
+                Pill(if (adding) "Selesai" else "+ Tambah", pal.teal, Modifier.clickable(role = Role.Button) { adding = !adding })
+            }
             Card {
-                dead.forEach { f ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Txt(f.name, 14.sp, pal.muted, modifier = Modifier.weight(1f)); Small("${f.restoreDays} hari")
+                if (extras.isEmpty()) Small("Teman yang belum ngestreak (atau apinya padam) juga bisa dikirimin tiap malam, biar streak mulai atau nyala lagi dari 1. Ketuk + Tambah.")
+                extras.forEach { f ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Txt(f.name, 14.sp, bold = true, modifier = Modifier.weight(1f))
+                        Small(if (f.restoreDays > 0) "padam ${f.restoreDays} hari" else "belum ngestreak")
+                        Px("✕", 16.sp, pal.red, Modifier.clickable(role = Role.Button, onClickLabel = "Hapus ${f.name} dari Tambahan") { db.setFriendOn(f.name, false); Live.bump() }.padding(6.dp))
                     }
                 }
-                Small("Api yang udah padam nggak bisa dinyalain lewat pesan. Buka chatnya di TikTok, ada tombol pulihkan.")
+                Small("Dikirimin tiap malam kayak yang lain. Streak tetap butuh dia bales.")
+            }
+            if (adding) Card {
+                Lbl("Pilih dari chat Inbox")
+                if (others.isEmpty()) Small(if (q.isBlank()) "Semua chat dari pindaian terakhir udah masuk. Pindai ulang kalau ada chat baru." else "Nggak ada yang cocok.")
+                others.take(40).forEach { f ->
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Tambah ${f.name}") { db.setFriendOn(f.name, true); Live.bump() }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Txt(f.name, 14.sp, modifier = Modifier.weight(1f)); Px("+", 18.sp, pal.teal)
+                    }
+                }
+            }
+        }
+        if (dead.isNotEmpty()) {
+            Lbl("Api padam")
+            Card {
+                dead.forEach { f ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Txt(f.name, 14.sp, pal.muted, modifier = Modifier.weight(1f)); Small("${f.restoreDays} hari")
+                        Pill("Kirim lagi", pal.teal, Modifier.clickable(role = Role.Button) { db.setFriendOn(f.name, true); Live.bump() })
+                    }
+                }
+                Small("Kirim lagi = masuk Tambahan, dikirimin tiap malam biar nyala lagi dari 1. Buat balikin angka lamanya, pakai tombol pulihkan di chat TikTok.")
             }
         }
         if (p.flameScanTs > 0) Small("Terakhir dipindai ${hm(p.flameScanTs)}. Teman baru dengan api muncul setelah pindai ulang.")

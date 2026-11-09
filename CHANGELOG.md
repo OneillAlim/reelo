@@ -3,6 +3,90 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-09 · Jaga Api dites ujung ke ujung di POCO X5, 6 bug dibenerin, daftar Tambahan, pembatas reels bisa dimatiin
+
+**Kenapa.** Bryan minta Jaga Api dites di HP-nya dari awal (pindai Inbox sampai kirim) dan semua edge case dicek. Dia
+juga minta:
+- pembatas reels bisa dimatiin kalau cuma mau pakai Jaga Api;
+- daftar tambahan: kirim ke orang yang belum/nggak ngestreak, biar streak mulai atau nyala lagi.
+
+HP: POCO X5 5G (HyperOS, Android 14), TikTok `trill` versi lebih baru dari survei 7 Nov.
+
+**Bug yang ketemu pas dites dan dibenerin.**
+1. **Run otomatis bikin kartu kosong nyangkut dan ngeblok semua run berikutnya.** Di `flameMaybe`, `FlameCard`
+   dibikin di dalam `.also { }` dan `flameRun` dipanggil sebelum `flameCard` ke-assign.
+   - Akibatnya `flameRun` bikin kartu kedua, dan kartu pertama (kosong) nyangkut di layar.
+   - `flameCard != null` terus, jadi coba ulang, tombol widget, dan run besok kebaca "lagi jalan".
+   - Bug ini udah ada sejak jalur otomatis dibikin; nggak ketahuan karena tes sebelumnya lewat "Kirim sekarang".
+   - Fix: assign dulu, baru jalan.
+2. **Pindai kelewat teman (9 dari 11).** Angka api di Inbox dimuat setelah nama. Baris yang kebaca pas angkanya belum
+   ada tercatat 0, dan `putIfAbsent` nggak pernah memperbaruinya.
+   - Fix: `TikTokBot.settled()` baca ulang tiap 300 ms sampai dua kali baca sama (maks 2,5 dtk).
+   - Hasil digabung pakai angka terbesar.
+   - Sapuan kirim juga pakai `settled()`.
+   - Dites 3x berturut-turut: konsisten 11, cocok dengan Inbox.
+3. **Sapuan bisa nolkan api teman.** Fitur "daftar ikut segar" (8 Nov) nimpa angka jadi 0 kalau sekali kebaca sebelum
+   dimuat. Contoh: TEMAN turun 11 ke 10 setelah sapuan kering. Fix:
+   - selama sapuan angka cuma boleh naik;
+   - di akhir sapuan yang selesai normal, yang **selalu** 0 dan kebaca minimal 2x baru di-nolkan.
+4. **MIUI ngeblok buka app dari latar.** Log: `MIUILOG- Permission Denied Activity`. Izin MIUI op 10021 ("Open new
+   windows while running in the background") default **Deny**.
+   - Kalau kamu lagi di layar utama, lolos. Kalau lagi di app lain, TikTok nggak kebuka.
+   - Fix:
+     - kartu "Siap jaga api?" ngecek op ini di HP Xiaomi (`FlameAlarm.miuiPopup`, refleksi `checkOpNoThrow`);
+     - tombolnya langsung ke halaman izin MIUI (`openMiuiPerms`);
+     - `TikTokBot.leave()` ngecek 1,5 dtk kemudian, dan kalau masih di TikTok, ke layar utama.
+   - Dites: setelah Always allow, simulasi 00.00 dari dalam Settings buka TikTok dan balik ke Settings.
+5. **`ReelService.running` bisa salah "mati".** `onDestroy` service lama bisa datang setelah service baru nyambung.
+   Sekarang `running` diturunkan dari `inst`.
+   - Catatan buat yang ngetes: `uiautomator dump` matiin sementara semua service Aksesibilitas lain. Selama ngetes Reelo,
+     baca layar pakai screenshot aja.
+6. **Deteksi api padam buta di TikTok baru.** Id subjudul ganti `mux` ke `mw8`. Sekarang teks
+   "Restore your N-day Streak" dicari di semua TextView baris itu; `TikTokUi.isSub` dihapus.
+
+**Perbaikan kecil.**
+- Toggle punya label buat pembaca layar (`semantics` + `toggleable`).
+- Teks peringatan "cuma yang dicentang" dibenerin.
+- Window `android` (pilihan "Complete action using") masuk `TRANSIENT`, jadi maskot nggak nongol di atas Reelo.
+- Robot balikin Inbox ke atas sebelum keluar.
+- Ringkasan riwayat dihitung per orang: yang gagal lalu kekirim di coba ulang nggak dihitung gagal.
+- Service nyambung lagi: hapus notif "Reelo lagi mati", lalu langsung `flameMaybe()` buat ngejar.
+- Tombol debug "pencet tombol 🔥 widget" ngirim PendingIntent yang sama dengan widget.
+
+**Fitur baru.**
+- **Pembatas reels** (`Prefs.limitsOn`, kartu paling atas di Kendali). Kalau dimatiin:
+  - nggak ada Pause Card, notif jatah, Jam Malam, Mode Tegas, Fokus, dan maskot melayang;
+  - reels tetap dihitung buat statistik;
+  - kartu-kartu pembatas di Kendali disembunyiin.
+- **Daftar Tambahan** di layar Teman.
+  - Pindai sekarang nyimpen semua chat Inbox, bukan cuma yang berapi.
+  - "+ Tambah" milih dari chat. Api padam punya tombol "Kirim lagi".
+  - Teman yang dicentang (`on`) tetap dikirimin walau angka apinya 0.
+  - `sweep(extra = …)`: selama masih ada Tambahan yang belum ketemu, sapuan lanjut sampai bawah Inbox.
+  - `flameWant` balikin `Triple`. `Db.flamePending` ikut ngitung Tambahan.
+
+**Hasil tes di HP (9 Nov).**
+
+| Tes | Hasil |
+|---|---|
+| Pindai | 11 teman berapi, 8 halaman, ±14 dtk, 3x konsisten |
+| Pesan kosong | Ditolak |
+| Simulasi 00.00 (HP di layar utama) | Alarm tepat 14.32.05; 11 disapu ±4 dtk/orang; 10 ok + 1 "nggak kelihatan terkirim"; notif nyebut jam coba ulang |
+| Coba ulang | Bunyi tepat 14.42.57; cuma ngirim ke 1 yang gagal; alarm berikutnya pindah ke 20.00 |
+| Update APK di tengah jadwal | Alarm coba ulang kepasang lagi dari prefs |
+| Aksesibilitas dimatiin | Notif "Reelo lagi mati"; nyala lagi = notif hilang + langsung ngejar |
+| Tombol 🔥 widget (semua udah aman) | Toast, TikTok nggak dibuka |
+| Simulasi dari app lain (setelah izin MIUI) | Lolos, balik ke app itu |
+| HP terkunci | Notif "🔥 Api nunggu kamu" |
+| Pembatas reels mati | Maskot di TikTok 2 window jadi 0 |
+
+**Belum dites.**
+- Buka kunci, lalu langsung jalan. Butuh pola kunci Bryan.
+- Kirim ke daftar Tambahan. Nunggu Bryan milih orangnya, karena itu pesan beneran ke orang baru.
+- Tombol pulihkan api padam. Akun ini nggak punya api padam, jadi layar chat-nya belum bisa disurvei.
+- Naruh widget beneran. Launcher POCO nggak nampilin widget Reelo di daftarnya setelah beberapa kali install ulang
+  lewat adb. Mungkin perlu restart HP.
+
 ## 2026-11-08 · Jaga Api: jadwal 00.00 yang konsisten, notif pengingat, tombol 🔥 di widget
 
 **Kenapa.** Bryan nanya apakah auto kirim tiap 00.00 udah jalan, dan minta:

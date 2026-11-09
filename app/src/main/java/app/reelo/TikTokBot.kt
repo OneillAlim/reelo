@@ -18,7 +18,8 @@ import kotlinx.coroutines.launch
 /**
  * Semua penanda layar TikTok buat Jaga Api, dikumpulin di sini. Kalau TikTok update dan pindai/kirim gagal,
  * buka Inbox atau chat, jalankan `adb shell uiautomator dump`, lalu sesuaikan di sini.
- * Disurvei di TikTok (trill) 47.6.3: nama di Inbox = id user_name, status = id mux, angka api = TextView angka di kanan nama.
+ * Disurvei di TikTok (trill) 47.6.3: nama di Inbox = id user_name, angka api = TextView angka di kanan nama.
+ * Id lain (status di bawah nama: mux di satu versi, mw8 di versi lain) diacak tiap update, jadi jangan dipakai.
  */
 object TikTokUi {
     val PKGS = listOf("com.ss.android.ugc.trill", "com.zhiliaoapp.musically")
@@ -26,7 +27,6 @@ object TikTokUi {
     val SEND = setOf("Send", "Kirim", "Kirim pesan")
     fun pkg(ctx: Context) = PKGS.firstOrNull { ctx.packageManager.getLaunchIntentForPackage(it) != null }
     fun isName(n: AccessibilityNodeInfo) = n.viewIdResourceName?.endsWith(":id/user_name") == true
-    fun isSub(n: AccessibilityNodeInfo) = n.viewIdResourceName?.endsWith(":id/mux") == true
     fun isTab(n: AccessibilityNodeInfo) = n.contentDescription?.toString() in INBOX && n.isVisibleToUser
 }
 
@@ -61,11 +61,13 @@ class TikTokBot(private val svc: AccessibilityService) {
      * daftar dibaca ulang dan dipilih baris pertama yang belum kebagian.
      * [each]: nama, angka api, id pesan, note (null = terkirim). [total] cuma perkiraan buat progres.
      * [saw]: tiap baris yang kebaca (nama, angka api), biar daftar teman ikut segar tanpa pindai ulang.
+     * [extra]: teman yang tetap dikirimin walau belum/nggak ngestreak (daftar Tambahan). Selama masih ada yang belum
+     * ketemu, sapuan lanjut sampai bawah Inbox, nggak berhenti di "2 halaman tanpa api".
      */
     fun sweep(
         want: (String) -> Boolean, pick: (String, Int) -> Pair<Long, String>?, total: Int, back: String?,
         progress: (Int, Int, String) -> Unit, each: (String, Int, Long?, String?) -> Unit, done: (Boolean) -> Unit,
-        saw: (String, Int) -> Unit = { _, _ -> },
+        saw: (String, Int) -> Unit = { _, _ -> }, extra: Set<String> = emptySet(),
     ) {
         if (running) return
         job = scope.launch {
@@ -85,11 +87,12 @@ class TikTokBot(private val svc: AccessibilityService) {
                         val r = waitFor(3_000) { r -> r.takeIf { isInbox(it) && list(it) != null } }
                         if (r == null) { if (++lost > 2 || !inbox()) break; continue }
                         lost = 0
-                        val rs = rows(r)
+                        val rs = settled()?.second?.takeIf { it.isNotEmpty() } ?: rows(r)
                         seen += rs.map { it.name }
                         rs.forEach { saw(it.name, it.streak) }
-                        val next = rs.firstOrNull { it.streak > 0 && it.name !in handled && want(it.name) }
-                        if (next == null) log("sweep page=$pages rows=${rs.size} streak=${rs.count { it.streak > 0 }} target=${rs.count { it.streak > 0 && want(it.name) }} handled=${rs.count { it.name in handled }}")
+                        val target = { row: Row -> (row.streak > 0 || row.name in extra) && want(row.name) }
+                        val next = rs.firstOrNull { it.name !in handled && target(it) }
+                        if (next == null) log("sweep page=$pages rows=${rs.size} streak=${rs.count { it.streak > 0 }} target=${rs.count(target)} handled=${rs.count { it.name in handled }}")
                         if (next != null) {
                             handled += next.name; sentThisPass++
                             val m = pick(next.name, next.streak) ?: continue
@@ -101,7 +104,7 @@ class TikTokBot(private val svc: AccessibilityService) {
                         }
                         // chat streak diobrolin tiap hari jadi selalu ngumpul di atas Inbox: 2 halaman tanpa api = udahan
                         cold = if (rs.any { it.streak > 0 }) 0 else cold + 1
-                        if (cold >= 2) { log("sweep: 2 halaman tanpa api, berhenti (putaran ${pass + 1})"); break }
+                        if (cold >= 2 && extra.all { it in handled || !want(it) }) { log("sweep: 2 halaman tanpa api, berhenti (putaran ${pass + 1})"); break }
                         val before = seen.size
                         // scroll kadang ditolak pas list baru selesai animasi: coba sampai 3x sebelum dianggap mentok
                         var moved = false
@@ -117,6 +120,7 @@ class TikTokBot(private val svc: AccessibilityService) {
                     }
                     if (pass == 1 || sentThisPass == 0 || handled.size >= total) break
                 }
+                toTop()
                 log("sweep: ${handled.size} dikirim, $pages halaman")
                 progress(handled.size, maxOf(total, handled.size), "")
                 finished = true
@@ -186,7 +190,7 @@ class TikTokBot(private val svc: AccessibilityService) {
             k !== nameNode && k.className?.toString()?.endsWith("TextView") == true && Flame.parseStreak(k.text) != null &&
                 Rect().also(k::getBoundsInScreen).let { it.left >= nb.right - 4 && it.top < nb.bottom && it.bottom > nb.top }
         }?.let { Flame.parseStreak(it.text) } ?: 0
-        val restore = kids.firstOrNull(TikTokUi::isSub)?.let { Flame.restoreDays(it.text) } ?: 0
+        val restore = kids.maxOfOrNull { Flame.restoreDays(it.text) } ?: 0
         Row(name, streak, restore, row)
     }
 
@@ -199,17 +203,38 @@ class TikTokBot(private val svc: AccessibilityService) {
         val found = LinkedHashMap<String, Friend>()
         var stale = 0
         for (i in 0 until 15) {
-            val r = root() ?: break
+            val (r, rs) = settled() ?: break
             val before = found.size
-            val rs = rows(r)
-            rs.forEach { found.putIfAbsent(it.name, Friend(it.name, it.streak, true, it.restore)) }
+            // baris yang sama bisa kebaca di dua halaman: ambil angka terbesar (bisa aja yang pertama kebaca belum dimuat)
+            rs.forEach { row -> found.merge(row.name, Friend(row.name, row.streak, true, row.restore)) { a, b -> if (b.streak > a.streak || b.restoreDays > a.restoreDays) b else a } }
             log("scan page=$i rows=${rs.size} streak=${rs.count { it.streak > 0 }} restore=${rs.count { it.restore > 0 }} total=${found.size}")
             stale = if (found.size == before) stale + 1 else 0
             if (stale >= 2) break
             if (list(r)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) != true) break
             delay(700)
         }
-        return found.values.filter { it.streak > 0 || it.restoreDays > 0 }
+        toTop() // biar pas kamu buka TikTok, Inbox nggak nyangkut di bawah
+        return found.values.toList() // semua chat: yang nggak ngestreak bisa dipilih ke daftar Tambahan
+    }
+
+    /**
+     * Baca baris Inbox setelah layarnya tenang. TikTok nampilin nama duluan, angka api dimuat belakangan, jadi baca
+     * ulang tiap 300 ms sampai dua kali baca hasilnya sama (maks 2,5 detik).
+     */
+    private suspend fun settled(): Pair<AccessibilityNodeInfo, List<Row>>? {
+        var last: String? = null
+        var out: Pair<AccessibilityNodeInfo, List<Row>>? = null
+        val end = SystemClock.uptimeMillis() + 2_500
+        while (SystemClock.uptimeMillis() < end) {
+            val r = root() ?: break
+            val rs = rows(r)
+            val sig = rs.joinToString("|") { "${it.name}:${it.streak}:${it.restore}" }
+            out = r to rs
+            if (rs.isNotEmpty() && sig == last) break
+            last = sig
+            delay(300)
+        }
+        return out
     }
 
     /** Scroll daftar Inbox ke bawah. RecyclerView TikTok kadang nolak SCROLL_FORWARD tapi nerima SCROLL_DOWN. */
@@ -259,9 +284,16 @@ class TikTokBot(private val svc: AccessibilityService) {
         return note
     }
 
-    /** Selesai: buka lagi app yang tadi dipakai, kalau nggak ada ke layar utama. */
+    /**
+     * Selesai: buka lagi app yang tadi dipakai, kalau nggak ada ke layar utama. MIUI bisa diam-diam nolak buka app
+     * dari latar ("Permission Denied Activity"), jadi 1,5 detik kemudian dicek: masih di TikTok = ke layar utama.
+     */
     private fun leave(back: String?) {
         val i = back?.takeIf { it !in TikTokUi.PKGS }?.let { svc.packageManager.getLaunchIntentForPackage(it) }
-        if (i != null) svc.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) else svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+        if (i == null) { svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME); return }
+        runCatching { svc.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            if (root()?.packageName?.toString() in TikTokUi.PKGS) { log("leave: balik ke app sebelumnya diblok, ke layar utama"); svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) }
+        }, 1_500)
     }
 }

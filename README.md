@@ -117,6 +117,10 @@ Semua jadwal ada di `FlameAlarm.kt`. Cuma ada 1 alarm terpasang, yaitu waktu ter
 - Alarm pakai `USE_EXACT_ALARM`, yang otomatis diberi buat app yang di-install sendiri. Kalau app ini masuk Play
   Store, ganti ke `SCHEDULE_EXACT_ALARM`: user harus ngizinin, dan kartu "Siap jaga api?" udah ngecek itu.
 - Di HyperOS, baterai Reelo harus **Tanpa batasan** + **Mulai otomatis**.
+- Di Xiaomi/POCO/Redmi, Izin lainnya > **Open new windows while running in the background** (op 10021) harus
+  **Always allow**. Kalau nggak, TikTok nggak bisa dibuka pas kamu lagi di app lain. Kartu "Siap jaga api?" ngecek ini.
+- Waktu ngetes, jangan pakai `uiautomator dump`, karena itu matiin sementara service Aksesibilitas Reelo. Pakai
+  screenshot.
 
 **Ngetes tanpa nunggu tengah malam.** Di build debug, layar Jaga Api punya tombol "debug: simulasi 00.00 (1 menit
 lagi)". Cek alarm yang kepasang:

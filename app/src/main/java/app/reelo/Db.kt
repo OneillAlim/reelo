@@ -71,7 +71,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "reelo.db", n
     /** Teman berapi yang hari itu belum kebagian pesan (angka di widget dan pengingat). */
     fun flamePending(day: LocalDate, all: Boolean): Int {
         val done = sentOk(day)
-        return friends().count { it.streak > 0 && (all || it.on) && it.name !in done }.coerceAtMost(Flame.MAX_FRIENDS)
+        return friends().count { (it.streak > 0 && all || it.on) && it.name !in done }.coerceAtMost(Flame.MAX_FRIENDS)
     }
 
     /** Teman yang hari itu udah kebagian salah satu pesan [ids] (buat kirim manual: jangan dobel pesan yang sama). */

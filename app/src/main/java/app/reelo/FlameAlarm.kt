@@ -51,6 +51,28 @@ class FlameAlarm : BroadcastReceiver() {
             else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         }
 
+        /**
+         * Xiaomi/POCO/Redmi: izin "Tampilkan jendela pop-up saat berjalan di latar belakang" (op MIUI 10021). Tanpa ini
+         * MIUI nolak Reelo buka TikTok kalau kamu lagi di app lain. null = bukan Xiaomi, atau nggak bisa dibaca.
+         */
+        fun miuiPopup(ctx: Context): Boolean? {
+            if (!Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true)) return null
+            return runCatching {
+                val ops = ctx.getSystemService(android.app.AppOpsManager::class.java)
+                val m = android.app.AppOpsManager::class.java.getMethod("checkOpNoThrow", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, String::class.java)
+                m.invoke(ops, 10021, android.os.Process.myUid(), ctx.packageName) as Int == android.app.AppOpsManager.MODE_ALLOWED
+            }.getOrNull()
+        }
+
+        /** Halaman "Izin lainnya" MIUI buat Reelo; kalau nggak ada, info app biasa. */
+        fun openMiuiPerms(ctx: Context) {
+            val miui = Intent("miui.intent.action.APP_PERM_EDITOR").setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                .putExtra("extra_pkgname", ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { ctx.startActivity(miui) }.onFailure {
+                runCatching { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+        }
+
         fun exact(ctx: Context) = Build.VERSION.SDK_INT < 31 || ctx.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
 
         private fun tick(ctx: Context) {

@@ -50,10 +50,12 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         float = FloatingMascot(this, p, ::line, ::hideToNotification, ::undo)
         p.seenStr.split('|', limit = 2).takeIf { it.size == 2 && it[0] == day.toString() }?.let { counter.load(it[1]) }
         refreshFloat()
-        running = true
         inst = this
         androidx.core.content.ContextCompat.registerReceiver(this, unlock, android.content.IntentFilter(Intent.ACTION_USER_PRESENT), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         FlameAlarm.schedule(this)
+        // nyambung lagi setelah dimatiin sistem: hapus notif "Reelo lagi mati", kejar kalau hari ini belum jalan
+        FlameAlarm.clear(this)
+        flameMaybe()
         Live.bump()
     }
 
@@ -64,7 +66,6 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         runCatching { unregisterReceiver(unlock) }
         if (inst === this) inst = null
         bot.destroy()
-        running = false
         Live.bump()
         super.onDestroy()
     }
@@ -72,7 +73,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     override fun onInterrupt() = Unit
 
     override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
-        if (key in setOf("floatOn", "snoozeUntil", "mascotName", "mascotTiktok", "mascotShorts", "mascotIg", "accName", "reduceMotion")) refreshFloat()
+        if (key in setOf("floatOn", "snoozeUntil", "mascotName", "mascotTiktok", "mascotShorts", "mascotIg", "accName", "reduceMotion", "limitsOn")) refreshFloat()
         if (key == "flameOn" || key == "flameAll") { FlameAlarm.schedule(this); Widgets.update(this) }
     }
 
@@ -145,7 +146,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     }
 
     private fun checkLimits(app: App, now: Long) {
-        if (bot.running) return
+        if (bot.running || !p.limitsOn) return
         val (d, counts) = today()
         val n = counts.getValue(app)
         val limit = p.limit(app)
@@ -196,18 +197,20 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
 
     /**
      * Siapa yang mau dikirimin: mode "semua yang ngestreak" = tiap baris Inbox yang ada apinya (termasuk api baru),
-     * selain itu cuma yang dicentang. Yang udah kebagian hari ini selalu dilewati. [only] = Tes 1 teman.
+     * selain itu cuma yang dicentang. Ditambah yang dicentang walau belum/nggak ngestreak (daftar Tambahan, buat
+     * mulai atau nyalain ulang streak). Yang udah kebagian hari ini selalu dilewati. [only] = Tes 1 teman.
+     * Hasil: (mau dikirimin?, perkiraan jumlah, nama yang dikirimin walau tanpa api).
      */
-    private fun flameWant(only: String?, again: Boolean = false): Pair<(String) -> Boolean, Int> {
+    private fun flameWant(only: String?, again: Boolean = false): Triple<(String) -> Boolean, Int, Set<String>> {
         val day = Flame.day(System.currentTimeMillis())
         // otomatis: maksimal sekali sehari. Manual: lewati cuma yang udah dapat pesan yang sama hari ini.
         val done = if (again) db.sentOkWith(day, db.msgs().filter { it.on }.map { it.id }) else db.sentOk(day)
-        val friends = db.friends().filter { it.streak > 0 }
+        val friends = db.friends()
         val picked = friends.filter { it.on }.map { it.name }.toSet()
         val all = p.flameAll && only == null
         val want = { name: String -> name !in done && (if (only != null) name == only else all || name in picked) }
-        val est = friends.count { want(it.name) }.coerceAtMost(Flame.MAX_FRIENDS)
-        return want to est
+        val est = friends.count { (it.streak > 0 || it.on || it.name == only) && want(it.name) }.coerceAtMost(Flame.MAX_FRIENDS)
+        return Triple(want, est, picked + listOfNotNull(only))
     }
 
     private fun flameLater(at: Long) { p.flameRetryAt = at; FlameAlarm.schedule(this) }
@@ -230,10 +233,12 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         val (_, est) = flameWant(null)
         if (est == 0 && !p.flameAll) return // belum ada yang dicentang; dicek lagi pas HP dibuka berikutnya
         float?.hide()
-        flameCard = FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() }).also { card ->
-            if (p.flameCountdown || force) card.countdown(est, onSnooze = { System.currentTimeMillis().plus(60 * 60_000).let { p.flameSnoozeUntil = it; flameLater(it) }; card.dismiss() }, onStart = { flameRun(null) })
-            else flameRun(null)
-        }
+        // flameCard di-assign dulu sebelum flameRun: kalau nggak, flameRun bikin kartu kedua dan kartu ini nyangkut kosong
+        // di layar, terus semua run berikutnya (coba ulang, widget, besok) kebaca "lagi jalan"
+        val card = FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() })
+        flameCard = card
+        if (p.flameCountdown || force) card.countdown(est, onSnooze = { System.currentTimeMillis().plus(60 * 60_000).let { p.flameSnoozeUntil = it; flameLater(it) }; card.dismiss() }, onStart = { flameRun(null) })
+        else flameRun(null)
     }
 
     /**
@@ -244,21 +249,24 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     fun flameNow(only: String? = null, again: Boolean = true): Int {
         if (bot.running || flameCard != null) return -1
         if (!hasMsg()) return 0
-        if (!again && flameWant(only).second == 0 && db.friends().any { it.streak > 0 }) return 2
+        if (!again && flameWant(only).second == 0 && db.friends().any { it.streak > 0 || it.on }) return 2
         flameRun(only, again)
         return 1
     }
 
     private fun flameRun(only: String?, again: Boolean = false) {
         val today = Flame.day(System.currentTimeMillis())
-        val (want, est) = flameWant(only, again)
+        val (want, est, extra) = flameWant(only, again)
         val msgs = db.msgs(); val rnd = java.util.Random()
         float?.hide()
         val card = flameCard ?: FlameCard(this, night(), onClose = { flameCard = null; refreshFloat() }).also { flameCard = it }
         FlameAlarm.clear(this)
         var ok = 0; var n = 0; var stopped = false
-        // angka api yang kebaca di Inbox: teman yang apinya padam sejak pindai terakhir jadi 0, biar widget nggak nyangkut
+        // angka api yang kebaca di Inbox, biar widget nggak nyangkut. Selama jalan cuma boleh naik: TikTok nampilin nama
+        // duluan dan angka belakangan, jadi satu kali kebaca 0 belum tentu padam. Yang sepanjang sapuan selalu 0 (dan
+        // kebaca minimal 2x) baru di-nolkan di akhir, kalau sapuannya selesai normal. Sisanya dibenerin pas pindai.
         val last = db.friends().associate { it.name to it.streak }.toMutableMap()
+        val best = HashMap<String, Int>(); val zeros = HashMap<String, Int>()
         bot.sweep(
             want = { name -> n < Flame.MAX_FRIENDS && want(name) },
             pick = { name, _ -> Flame.pick(msgs, db.lastMsg(name), rnd)?.let { m -> m.id to m.text } },
@@ -270,9 +278,14 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
                 db.touchFriend(name, if (note == null) streak + 1 else streak)
                 if (note == null) ok++
             },
-            saw = { name, s -> if (last[name] != s && (s > 0 || name in last)) { last[name] = s; db.touchFriend(name, s) } },
+            extra = extra,
+            saw = { name, s ->
+                best[name] = maxOf(best[name] ?: 0, s); if (s == 0) zeros[name] = (zeros[name] ?: 0) + 1
+                if (s > 0 && last[name] != s) { last[name] = s; db.touchFriend(name, s) }
+            },
             done = { cancelled ->
                 // cancelled tanpa Batal = TikTok/Inbox nggak kebuka, dihitung gagal juga
+                if (!cancelled) best.forEach { (name, s) -> if (s == 0 && (zeros[name] ?: 0) >= 2 && (last[name] ?: 0) > 0) db.touchFriend(name, 0) }
                 val bad = n - ok + if (cancelled && !stopped) 1 else 0
                 val retry = if (only == null) flameAfter(today, bad, stopped) else null
                 card.dismiss()
@@ -304,7 +317,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         if (bot.running) { done(null); return }
         bot.scan(fgPkg) { found ->
             if (found != null) { db.saveScan(found); p.flameScanTs = System.currentTimeMillis() }
-            Live.bump(); done(found?.size)
+            Live.bump(); done(found?.count { it.streak > 0 })
         }
     }
 
@@ -355,7 +368,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     private fun refreshFloat() {
         val f = float ?: return
         val now = System.currentTimeMillis()
-        val visible = p.floatOn && now >= p.snoozeUntil && fgPkg != packageName && pause == null && flameCard == null
+        val visible = p.floatOn && p.limitsOn && now >= p.snoozeUntil && fgPkg != packageName && pause == null && flameCard == null
         if (p.snoozeUntil > now) { h.removeCallbacksAndMessages(SNOOZE); h.postAtTime({ refreshFloat() }, SNOOZE, SystemClock.uptimeMillis() + (p.snoozeUntil - now)) }
         if (!visible) { f.hide(); return }
         val (_, counts) = today()
@@ -391,10 +404,12 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         private val SNOOZE = Any()
         private const val SETTLE_MS = 350L
         /** Jendela yang nongol sebentar di atas app (notif shade, dialog izin). Jangan dianggap keluar dari reels. */
-        private val TRANSIENT = setOf("com.android.systemui", "com.google.android.permissioncontroller", "com.miui.securitycenter")
+        private val TRANSIENT = setOf("android", "com.android.systemui", "com.google.android.permissioncontroller", "com.miui.securitycenter")
 
         /** true cuma kalau service beneran nyambung. HyperOS/MIUI kadang matiin prosesnya tapi pengaturan tetap nyala. */
-        @Volatile var running = false
+        // dari inst, bukan flag sendiri: pas Aksesibilitas di-set ulang, onDestroy service lama bisa datang
+        // setelah service baru nyambung, dan flag biasa bakal ke-reset jadi false padahal service hidup
+        val running get() = inst != null
 
         fun isOn(ctx: Context) = running && enabled(ctx)
 

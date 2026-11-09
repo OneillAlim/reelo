@@ -1,5 +1,8 @@
 package app.reelo.ui
 
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -186,7 +189,7 @@ fun Toggle(on: Boolean, label: String, onChange: (Boolean) -> Unit) {
     val p = LocalPal.current
     Box(
         Modifier.size(40.dp, 22.dp).background(if (on) p.teal else p.line).border(2.dp, p.fg)
-            .clickable(role = Role.Switch, onClickLabel = label) { onChange(!on) }.padding(3.dp),
+            .semantics { contentDescription = label }.toggleable(on, role = Role.Switch) { onChange(it) }.padding(3.dp),
     ) { Box(Modifier.size(12.dp).offset(x = if (on) 20.dp else 0.dp).background(if (on) Cream else p.fg)) }
 }
 
