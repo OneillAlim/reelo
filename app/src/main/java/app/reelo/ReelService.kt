@@ -54,7 +54,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         androidx.core.content.ContextCompat.registerReceiver(this, unlock, android.content.IntentFilter(Intent.ACTION_USER_PRESENT), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         FlameAlarm.schedule(this)
         // nyambung lagi setelah dimatiin sistem: hapus notif "Reelo lagi mati", kejar kalau hari ini belum jalan
-        FlameAlarm.clear(this)
+        if (!FlameAlarm.locked(this)) FlameAlarm.clear(this) // kalau masih terkunci, notif "buka HP" biarin
         flameMaybe()
         Live.bump()
     }
