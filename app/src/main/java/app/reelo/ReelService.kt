@@ -38,7 +38,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     private val bot by lazy { TikTokBot(this) }
     private var flameCard: FlameCard? = null
     private val unlock = object : android.content.BroadcastReceiver() {
-        override fun onReceive(c: Context, i: Intent) { flameMaybe() }
+        override fun onReceive(c: Context, i: Intent) { if (i.action == Intent.ACTION_SCREEN_OFF) float?.hide() else { flameMaybe(); refreshFloat() } }
     }
 
     override fun onServiceConnected() {
@@ -51,7 +51,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
         p.seenStr.split('|', limit = 2).takeIf { it.size == 2 && it[0] == day.toString() }?.let { counter.load(it[1]) }
         refreshFloat()
         inst = this
-        androidx.core.content.ContextCompat.registerReceiver(this, unlock, android.content.IntentFilter(Intent.ACTION_USER_PRESENT), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        androidx.core.content.ContextCompat.registerReceiver(this, unlock, android.content.IntentFilter(Intent.ACTION_USER_PRESENT).apply { addAction(Intent.ACTION_SCREEN_OFF) }, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         FlameAlarm.schedule(this)
         // nyambung lagi setelah dimatiin sistem: hapus notif "Reelo lagi mati", kejar kalau hari ini belum jalan
         if (!FlameAlarm.locked(this)) FlameAlarm.clear(this) // kalau masih terkunci, notif "buka HP" biarin
@@ -369,7 +369,7 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
     private fun refreshFloat() {
         val f = float ?: return
         val now = System.currentTimeMillis()
-        val visible = p.floatOn && p.limitsOn && now >= p.snoozeUntil && fgPkg != packageName && pause == null && flameCard == null
+        val visible = p.floatOn && p.limitsOn && now >= p.snoozeUntil && fgPkg != packageName && pause == null && flameCard == null && getSystemService(android.os.PowerManager::class.java).isInteractive
         if (p.snoozeUntil > now) { h.removeCallbacksAndMessages(SNOOZE); h.postAtTime({ refreshFloat() }, SNOOZE, SystemClock.uptimeMillis() + (p.snoozeUntil - now)) }
         if (!visible) { f.hide(); return }
         val (_, counts) = today()

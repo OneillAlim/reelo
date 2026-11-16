@@ -3,6 +3,28 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-16 · Hemat baterai: maskot tidur pas layar mati + repo jadi public dengan Release v1.0
+
+**Kenapa.** Bryan minta APK yang dibagiin publik nggak boros baterai, dan repo dibuka buat umum + ada link download.
+
+**Perubahan.**
+- **`ReelService.kt`:** receiver `unlock` sekarang juga dengerin `ACTION_SCREEN_OFF`.
+  - Layar mati: `float.hide()`, jadi timer jalan-jalan maskot (tiap 6-15 dtk), animasi, sama `updateViewLayout`
+    berhenti. Sebelumnya semua itu tetap jalan walau layar mati.
+  - `USER_PRESENT` (HP dibuka): `flameMaybe()` kayak dulu, ditambah `refreshFloat()` biar maskot muncul lagi.
+  - `refreshFloat()` cek `PowerManager.isInteractive`, jadi maskot nggak ke-attach lagi pas layar mati (misal ada
+    reel ke-settle atau prefs berubah).
+- Repo `OneillAlim/reelo` jadi **public**, Steven (`stevenwidinata-sys`) diundang ulang (write).
+- APK release (debug key, minify, tanpa izin INTERNET) diupload ke GitHub Release `v1.0`.
+
+**Cara ngetes.** Nyalain pembatas reels + maskot, buka TikTok, matiin layar 5 menit, nyalain lagi dan buka kunci:
+maskot muncul lagi. Cek baterai: Setelan > Baterai > Reelo, bandingin pemakaian sehari sebelum/sesudah.
+
+**Belum dites di HP.** Build release sukses, tapi belum dicoba di POCO X5 / Xiaomi 14T.
+
+**Sisa.** Kalau masih boros: coba `notificationTimeout` > 0 di `reel_service.xml` (hati-hati, event scroll bisa
+digabung dan hitungan `scrollDeltaY` meleset) atau batasi `packageNames` (tapi deteksi pindah app jadi ilang).
+
 ## 2026-11-09 (sore) · Jaga Api jadi fitur utama: Beranda + widget fokus ke api, pembatas reels opsional
 
 **Kenapa.** Bryan: orang pakai app ini buat nyalain streak; pembatas reels cuma sampingan. Permintaannya:
