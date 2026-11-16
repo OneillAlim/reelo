@@ -3,6 +3,17 @@
 Catatan tiap update, biar siapa pun bisa lanjut dari sini. Yang paling baru di atas.
 Tiap entri: apa yang berubah, kenapa, file yang disentuh, cara ngetes, dan sisa kerjaan.
 
+## 2026-11-17 · Fix: Pause Card Jam Malam nongol lagi jam 04.00
+
+**Kenapa.** `checkLimits` nyimpen jatah Jam Malam pakai key `"$d|night"`, dan `d` itu hari Reelo yang ganti jam 04.00.
+Jam Malam default 23.00-05.00, jadi jam 04.00 key-nya ganti, `nextPause` ke-reset, dan Pause Card langsung muncul
+lagi di reel berikutnya walau baru dilewatin (harusnya baru muncul lagi setelah +5 reels).
+
+**Perubahan.** `ReelService.kt`: key-nya sekarang `"$startDay|night"` (tanggal Jam Malam mulai), jadi satu malam = satu key.
+
+**Cara ngetes.** Pembatas reels nyala, Jam Malam 23.00-05.00, jatah malam 2. Jam 03.50 tonton reels sampai Pause Card
+muncul, pilih Satu Lagi, lanjut sampai lewat 04.00: Pause Card baru muncul lagi setelah 5 reels, bukan langsung.
+
 ## 2026-11-16 · Hemat baterai: maskot tidur pas layar mati + repo jadi public dengan Release v1.0
 
 **Kenapa.** Bryan minta APK yang dibagiin publik nggak boros baterai, dan repo dibuka buat umum + ada link download.

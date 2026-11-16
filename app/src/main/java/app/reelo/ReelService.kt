@@ -159,7 +159,9 @@ class ReelService : AccessibilityService(), SharedPreferences.OnSharedPreference
             val startDay = if (p.nightStart > p.nightEnd && hour < p.nightEnd) LocalDate.now().minusDays(1) else LocalDate.now()
             val ns = startDay.atTime(p.nightStart, 0).atZone(Days.zone).toInstant().toEpochMilli()
             val nn = db.count(ns, now + 1)
-            if (gate("$d|night", nn, p.nightLimit)) { show("Jam Malam", "Udah $nn reels sejak ${"%02d".format(p.nightStart)}.00. Waktunya tidur."); return }
+            // key per malam (tanggal mulainya), bukan hari Reelo: hari Reelo ganti jam 04.00 padahal Jam Malam bisa
+            // sampai 05.00, jadi dulu Pause Card nongol lagi tiap 04.00 walau baru dilewatin
+            if (gate("$startDay|night", nn, p.nightLimit)) { show("Jam Malam", "Udah $nn reels sejak ${"%02d".format(p.nightStart)}.00. Waktunya tidur."); return }
         }
         val warn = ceil(limit * .8).toInt()
         if (n in warn until limit && nudged.add("$d|$app")) nudge(app, n, limit)
